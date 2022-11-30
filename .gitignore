@@ -1,0 +1,6 @@
+# Byte-compiled / optimized / DLL files
+.cache
+.DS_Store*
+*.pyc
+.out
+.swp
