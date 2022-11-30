@@ -32,6 +32,8 @@ python3 -m pip install -r requirements.txt
   publisher={Public Library of Science San Francisco, CA USA}
 }
 ```
+
+* Generalized VDEP (this work)
 Coming soon...
 <!-- ```tex
 
