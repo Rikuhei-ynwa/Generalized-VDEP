@@ -4,6 +4,3 @@
 *.pyc
 .out
 .swp
-socceraction/spadl/schema.py
-socceraction/spadl/utils.py
-matplotsoccer/fns.py
