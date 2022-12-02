@@ -19,7 +19,7 @@ python3 -m pip install -r requirements.txt
 * See `run.sh` 
 
 ## Reference
-* VDEP (previous work)
+* VDEP (previous work) [paper](https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0263051)
 ```tex
 @article{toda2022evaluation,
   title={Evaluation of soccer team defense based on prediction models of ball recovery and being attacked: A pilot study},
@@ -33,8 +33,12 @@ python3 -m pip install -r requirements.txt
 }
 ```
 
-* Generalized VDEP (this work)
-Coming soon...
-<!-- ```tex
-
-``` -->
+* Generalized VDEP (this work) [paper](https://arxiv.org/abs/2212.00021)
+<-- ```tex
+@article{umemoto2022location,
+  title={Location analysis of players in UEFA EURO 2020 and 2022 using generalized valuation of defense by estimating probabilities},
+  author={Rikuhei Umemoto and Kazushi, Tsutsui and Fujii, Keisuke},
+  journal={arXiv preprint arXiv:2212.00021},
+  year={2022}
+}
+``` 
