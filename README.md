@@ -37,7 +37,7 @@ python3 -m pip install -r requirements.txt
 ```tex
 @article{umemoto2022location,
   title={Location analysis of players in UEFA EURO 2020 and 2022 using generalized valuation of defense by estimating probabilities},
-  author={Rikuhei Umemoto and Kazushi, Tsutsui and Fujii, Keisuke},
+  author={Rikuhei, Umemoto and Kazushi, Tsutsui and Fujii, Keisuke},
   journal={arXiv preprint arXiv:2212.00021},
   year={2022}
 }
