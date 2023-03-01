@@ -16,9 +16,7 @@ import socceraction.vdep.features as fs
 
 pd.set_option("display.max_columns", None)
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
-warnings.filterwarnings(
-    action="ignore", message="credentials were not supplied. open data access only"
-)
+warnings.filterwarnings(action="ignore", message="credentials were not supplied. open data access only")
 
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
@@ -30,9 +28,7 @@ parser.add_argument("--grid_search", action="store_true")
 parser.add_argument("--predict_actions", action="store_true")
 parser.add_argument("--calculate_f1scores", action="store_true")
 parser.add_argument("--show_f1scores", action="store_true")
-parser.add_argument(
-    "--pickle", type=int, default=4, help="if using python 3.9 or over, please use 5"
-)
+parser.add_argument("--pickle", type=int, default=4)
 args, _ = parser.parse_known_args()
 
 pickle.HIGHEST_PROTOCOL = args.pickle  # 4 is the highest in an older version of pickle
@@ -41,22 +37,18 @@ os.environ["OMP_NUM_THREADS"] = str(numProcess)
 
 start = time.time()
 
-"""Preparation"""
-if "euro" in args.game:
-    datafolder = "../data-statsbomb/vdep/" + args.game
+# Preparation
+if "euro" in args.game or "wc" in args.game:
+    datafolder = "../GVDEP_data/data-statsbomb/" + args.game
     os.makedirs(datafolder, exist_ok=True)
     spadl_h5 = os.path.join(datafolder, "spadl-statsbomb.h5")
-elif "jleague" in args.game:
-    datafolder = "../data-jleague/gvdep/2020&2021"
-    os.makedirs(datafolder, exist_ok=True)
-    spadl_h5 = os.path.join(datafolder, "spadl-jleague.h5")
 
 features_h5 = os.path.join(datafolder, "features.h5")
 labels_h5 = os.path.join(datafolder, "labels.h5")
 
 nb_prev_actions = 1
 
-"""Cross Validation by n_nearest"""
+# Cross Validation by n_nearest
 random.seed(args.seed)
 np.random.seed(args.seed)
 if args.predict_actions:
@@ -70,8 +62,8 @@ else:
 games = pd.read_hdf(spadl_h5, "games")
 print("nb of games:", len(games))
 
-"""note: only for the purpose of this example and due to the small dataset,
-        we use the same data for training and evaluation"""
+# note: only for the purpose of this example and due to the small dataset,
+# we use the same data for training and evaluation
 if args.calculate_f1scores:
     for n_nearest in range(12):
         for cv in range(1, 11, 1):
@@ -84,19 +76,18 @@ if args.calculate_f1scores:
             end_point = start_point + split_traineval
             if "euro" in args.game:
                 # Due to the number of games in the competitions, 46:5 or 45:6
-                evalgames_k = games[start_point:end_point]
-                traingames_k = games.drop(games.index[start_point:end_point])
                 if cv == k_fold:
-                    evalgames_k = games[start_point:]
-                    traingames_k = games.drop(games.index[start_point:])
-            elif "jleague" in args.game:
-                # Due to the number of games in data, 10:85 or 9:86
-                if cv > 5:
                     split_traineval += 1
-                    start_point = (cv - 1) * split_traineval
+                    start_point = len(games) - (k_fold - cv + 1) * split_traineval
                     end_point = start_point + split_traineval
-                evalgames_k = games[start_point:end_point]
-                traingames_k = games.drop(games.index[start_point:end_point])
+            elif "wc" in args.game:
+                # Due to the number of games in data, 6:58 or 7:57
+                if cv > 6:
+                    split_traineval += 1
+                    start_point = len(games) - (k_fold - cv + 1) * split_traineval
+                    end_point = start_point + split_traineval
+            evalgames_k = games[start_point:end_point]
+            traingames_k = games.drop(games.index[start_point:end_point])
             print("train/eval of games:", len(traingames_k), "/", len(evalgames_k))
 
             if n_nearest <= 11:
@@ -152,10 +143,7 @@ if args.calculate_f1scores:
 
                 # Drop the rows not including players' coodinates.
                 # Hence, consider whether the rows' "dist_at0_a0" and "dist_df0_a0" are NaN.
-                if (
-                    "dist_at0_a0" in X.columns.values
-                    and "dist_df0_a0" in X.columns.values
-                ):
+                if "dist_at0_a0" in X.columns.values and "dist_df0_a0" in X.columns.values:
                     at_nan = X[X["dist_at0_a0"].isnull()]
                     at_df_nan = at_nan[at_nan["dist_df0_a0"].isnull()]
                     drop_index = at_df_nan.index.values.tolist()
@@ -187,9 +175,7 @@ if args.calculate_f1scores:
                     Xcols_vaep = Xcols[: 52 + 8 * n_nearest]
                     Xcols = Xcols[: 52 + 8 * n_nearest]
                 else:
-                    Xcols_vaep = (
-                        Xcols[:28] + Xcols[33:49] + Xcols[52 : 52 + 8 * n_nearest]
-                    )
+                    Xcols_vaep = Xcols[:28] + Xcols[33:49] + Xcols[52 : 52 + 8 * n_nearest]
                     Xcols = Xcols[24:28] + Xcols[33:49] + Xcols[52 : 52 + 8 * n_nearest]
 
             #  train classifiers F(X) = Y (for CV and Test)
@@ -225,9 +211,7 @@ if args.calculate_f1scores:
 
             f1scores = np.empty(len(trainY.columns))
             for col in list(trainY.columns):
-                print(
-                    f"training {col}\n positive: {trainY[col].sum()} negative: {len(trainY[col]) - trainY[col].sum()}"
-                )
+                print(f"training {col}\n positive: {trainY[col].sum()} negative: {len(trainY[col]) - trainY[col].sum()}")
 
                 model = xgboost.XGBClassifier(
                     n_estimators=50,
@@ -288,9 +272,7 @@ if args.calculate_f1scores:
                 p = sum(y) / len(y)
                 base = [p] * len(y)
                 brier = brier_score_loss(y, y_hat)
-                print(
-                    f"  Brier score: {brier:.5f}, {(brier / brier_score_loss(y, base)):.5f}"
-                )
+                print(f"  Brier score: {brier:.5f}, {(brier / brier_score_loss(y, base)):.5f}")
                 ll = log_loss(y, y_hat)
                 print(f"  log loss score: {ll:.5f}, {(ll / log_loss(y, base)):.5f}")
                 print(f"  ROC AUC: {roc_auc_score(y, y_hat):.5f}")
@@ -305,9 +287,7 @@ if args.calculate_f1scores:
                     Y_hat[col] = [p[1] for p in models[col].predict_proba(evalX_vaep)]
                 elif col == "gains" or col == "effective_attack":
                     Y_hat[col] = [p[1] for p in models[col].predict_proba(evalX)]
-                print(
-                    f"### Y: {col} ###\n positive: {evalY[col].sum()} negative: {len(evalY[col]) - evalY[col].sum()}"
-                )
+                print(f"### Y: {col} ###\n positive: {evalY[col].sum()} negative: {len(evalY[col]) - evalY[col].sum()}")
                 f1scores[i] = evaluate_metrics(evalY[col], Y_hat[col])
 
             A = []
@@ -319,9 +299,7 @@ if args.calculate_f1scores:
 
             # concatenate action game id rows with predictions and save per game
             grouped_predictions = pd.concat([A, Y_hat], axis=1).groupby("game_id")
-            for k, df in tqdm.tqdm(
-                grouped_predictions, desc="Saving predictions per game"
-            ):
+            for k, df in tqdm.tqdm(grouped_predictions, desc="Saving predictions per game"):
                 df = df.reset_index(drop=True)
                 df[Y_hat.columns].to_hdf(predictions_h5, f"game_{int(k)}")
 
@@ -332,9 +310,9 @@ if args.calculate_f1scores:
                 pickle.dump(static, f, protocol=4)
                 print(static_pkl + " is saved")
 
-            print(time.time() - start)
+            print(f"Evaluation time of {model_str} : ", time.time() - start)
 
-"""Show the graphs about F1scores of each probabilities"""
+# Show the graphs about F1scores of each probabilities
 if args.show_f1scores:
     if args.predict_actions:
         figuredir = datafolder + "/vaep_framework/figures"

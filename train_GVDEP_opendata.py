@@ -24,9 +24,7 @@ import socceraction.vdep.formula as vdepformula
 
 pd.set_option("display.max_columns", None)
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
-warnings.filterwarnings(
-    action="ignore", message="credentials were not supplied. open data access only"
-)
+warnings.filterwarnings(action="ignore", message="credentials were not supplied. open data access only")
 
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
@@ -52,9 +50,7 @@ parser.add_argument(
     default="",
     help="Please set the name of the country, not the name of the team",
 )
-parser.add_argument(
-    "--pickle", type=int, default=4, help="if a higher python version, please use 5"
-)
+parser.add_argument("--pickle", type=int, default=4)
 args, _ = parser.parse_known_args()
 
 pickle.HIGHEST_PROTOCOL = args.pickle  # 4 is the highest in an older version of pickle
@@ -67,10 +63,10 @@ data_dir = args.datadir
 random.seed(args.seed)
 np.random.seed(args.seed)
 
-datafolder = "../data-statsbomb/vdep/" + args.game
+datafolder = f"../GVDEP_data/data-{args.data}/" + args.game
 os.makedirs(datafolder, exist_ok=True)
 
-"""1. load and convert statsbomb data"""
+# 1. load and convert statsbomb data
 if args.skip_load_rawdata:
     print("loading rawdata is skipped")
 else:
@@ -103,33 +99,23 @@ else:
         # View all available competitions
         competitions = DLoader.competitions()
         set(competitions.competition_name)
-
-        if args.game == "fifa":
+        if args.game == "wc2022":
             selected_competitions = competitions[
-                competitions.competition_name == "FIFA World Cup"
-            ]
-        elif args.game == "male":
-            selected_competitions = competitions[
-                competitions.competition_gender == "male"
+                (competitions.competition_name == "FIFA World Cup") & (competitions.season_name == "2022")
             ]
         elif args.game == "euro2020":
             selected_competitions = competitions[
-                competitions.competition_name == "UEFA Euro"
+                (competitions.competition_name == "UEFA Euro") & (competitions.season_name == "2020")
             ]
         elif args.game == "euro2022":
             selected_competitions = competitions[
-                competitions.competition_name == "UEFA Women's Euro"
+                (competitions.competition_name == "UEFA Women's Euro") & (competitions.season_name == "2022")
             ]
         else:  # All data
             selected_competitions = competitions
 
     # Get games from all selected competitions
-    games = pd.concat(
-        [
-            DLoader.games(row.competition_id, row.season_id)
-            for row in selected_competitions.itertuples()
-        ]
-    )
+    games = pd.concat([DLoader.games(row.competition_id, row.season_id) for row in selected_competitions.itertuples()])
 
     # Store converted spadl data in a h5-file
     games_verbose = tqdm.tqdm(list(games.itertuples()), desc="Loading game data")
@@ -138,9 +124,7 @@ else:
     for game in games_verbose:
         events = DLoader.events(game.game_id, load_360=True)
         # convert data
-        actions[game.game_id] = convert_to_actions_360(
-            events, game.home_team_id
-        )  # spadl.statsbomb.convert_to_actions
+        actions[game.game_id] = convert_to_actions_360(events, game.home_team_id)  # spadl.statsbomb.convert_to_actions
 
         # load data
         teams.append(DLoader.teams(game.game_id))
@@ -156,9 +140,7 @@ else:
         spadlstore["competitions"] = selected_competitions
         spadlstore["games"] = games
         spadlstore["teams"] = teams
-        spadlstore["players"] = players[
-            ["player_id", "player_name", "nickname"]
-        ].drop_duplicates(subset="player_id")
+        spadlstore["players"] = players[["player_id", "player_name", "nickname"]].drop_duplicates(subset="player_id")
         spadlstore["player_games"] = players[
             [
                 "player_id",
@@ -181,7 +163,7 @@ labels_h5 = os.path.join(datafolder, "labels.h5")
 print(pd.read_hdf(spadl_h5, "competitions"))
 
 
-"""2. compute features and labels"""
+# 2. compute features and labels
 nb_prev_actions = 1
 if args.skip_preprocess:
     print("preprocessing is skipped")
@@ -225,15 +207,13 @@ else:
     # Compute labels
     yfns = [lab.gains, lab.effective_attack, lab.scores, lab.concedes]
     g = 0
-    for game in tqdm.tqdm(
-        list(games.itertuples()), desc=f"Computing and storing labels in {labels_h5}"
-    ):
+    for game in tqdm.tqdm(list(games.itertuples()), desc=f"Computing and storing labels in {labels_h5}"):
         actions = pd.read_hdf(spadl_h5, f"actions/game_{game.game_id}")
         Y = pd.concat([fn(spadl.add_names_360(actions)) for fn in yfns], axis=1)
         Y.to_hdf(labels_h5, f"game_{game.game_id}")
 
 
-"""3. estimate scoring and conceding probabilities"""
+# 3. estimate scoring and conceding probabilities
 random.seed(args.seed)
 np.random.seed(args.seed)
 if args.predict_actions:
@@ -245,8 +225,8 @@ predictions_h5 = os.path.join(datafolder, "predictions.h5")
 games = pd.read_hdf(spadl_h5, "games")
 print("nb of games:", len(games))
 
-"""note: only for the purpose of this example and due to the small dataset,
-        we use the same data for training and evaluation"""
+# note: only for the purpose of this example and due to the small dataset,
+# we use the same data for training and evaluation
 if args.no_games < 10 and args.no_games > 0:
     traingames = games[: args.no_games - 1]
     testgames = games[args.no_games - 1 : args.no_games]
@@ -255,9 +235,7 @@ elif args.no_games >= 10 or args.no_games == 0:
     split_traintest = int(9 * len(games) / 10)
     traingames = games[:split_traintest]
     testgames = games[split_traintest:]
-    model_str = (
-        str(args.no_games) + "games" if args.no_games >= 10 else "_traindata_all"
-    )
+    model_str = str(args.no_games) + "games" if args.no_games >= 10 else "_traindata_all"
 elif args.no_games == -1:
     traingames = games
     testgames = games
@@ -380,9 +358,7 @@ else:
     from sklearn.model_selection import train_test_split
 
     for col in list(Y.columns):
-        print(
-            f"training {col} positive: {Y[col].sum()} negative: {len(Y[col]) - Y[col].sum()}"
-        )
+        print(f"training {col} positive: {Y[col].sum()} negative: {len(Y[col]) - Y[col].sum()}")
         model = xgboost.XGBClassifier(
             n_estimators=50,
             max_depth=5,
@@ -436,9 +412,7 @@ else:
                     feature_names=trainX_vaep.columns,
                     show=False,
                 )
-                plt.savefig(
-                    os.path.join(feature_importances, f"model_{col}_summary.png")
-                )
+                plt.savefig(os.path.join(feature_importances, f"model_{col}_summary.png"))
                 plt.clf()
                 plt.close()
         elif col == "gains" or col == "effective_attack":
@@ -466,9 +440,7 @@ else:
                     feature_names=X.columns,
                     show=False,
                 )
-                plt.savefig(
-                    os.path.join(feature_importances, f"model_{col}_summary.png")
-                )
+                plt.savefig(os.path.join(feature_importances, f"model_{col}_summary.png"))
                 plt.clf()
                 plt.close()
         models[col] = model
@@ -514,9 +486,7 @@ else:
             Y_hat[col] = [p[1] for p in models[col].predict_proba(testX_vaep)]
         else:
             Y_hat[col] = [p[1] for p in models[col].predict_proba(testX)]
-        print(
-            f"### Y: {col} ###\npositive: {testY[col].sum()} negative: {len(testY[col]) - testY[col].sum()}"
-        )
+        print(f"### Y: {col} ###\npositive: {testY[col].sum()} negative: {len(testY[col]) - testY[col].sum()}")
         f1scores[i] = evaluate_metrics(testY[col], Y_hat[col])
 
     # Save predictions
@@ -546,7 +516,7 @@ else:
         pickle.dump(static, f, protocol=4)
 
 
-"""4. compute gvdep values and top players"""
+# 4. compute gvdep values and top players
 # Select data
 with pd.HDFStore(spadl_h5, pickle_protocol=4) as spadlstore:
     games = (
@@ -579,23 +549,15 @@ for game in tqdm.tqdm(list(games.itertuples()), desc="Rating actions"):
     drop_array = np.asarray([index for index in drop_index if index < len(actions)])
     vaep, vdep, ids = vdepformula.value(actions, features, preds, drop_array, C_vdep_v0)
     A.append(pd.concat([actions, preds, vaep, vdep, ids], axis=1))
-    drop_index = np.asarray(sorted(list(set(drop_index) - set(drop_array)))) - len(
-        actions
-    )
-A = (
-    pd.concat(A)
-    .sort_values(["game_id", "period_id", "time_seconds"])
-    .reset_index(drop=True)
-)
+    drop_index = np.asarray(sorted(list(set(drop_index) - set(drop_array)))) - len(actions)
+A = pd.concat(A).sort_values(["game_id", "period_id", "time_seconds"]).reset_index(drop=True)
 
 # Gvdep calculated by vaep, gain_value and attacked_value
 num_gains = (A["gains_id"]).sum()
 num_attacked = (A["effective_id"]).sum()
 weight_gains = (A["vaep_value"] * A["gains_id"]).sum() / num_gains
 weight_attacked = ((-A["vaep_value"]) * (A["effective_id"])).sum() / num_attacked
-A["g_vdep_value"] = (
-    weight_gains * A["gain_value"] - weight_attacked * A["attacked_value"]
-)
+A["g_vdep_value"] = weight_gains * A["gain_value"] - weight_attacked * A["attacked_value"]
 
 # (optional) inspect country's top 5 most valuable non-shot actions
 if args.test:
@@ -617,7 +579,7 @@ if args.test:
         return f"{m}m{s}s"
 
     sorted_A = A.sort_values("g_vdep_value", ascending=False)
-    sorted_A = sorted_A[sorted_A.team_name.str.contains(args.teamView)]
+    sorted_A = sorted_A[sorted_A.defense_team.str.contains(args.teamView)]
     sorted_A = sorted_A[(~sorted_A.type_name.str.contains("shot"))]  # eliminate shots
 
     for j in range(10):
@@ -625,9 +587,7 @@ if args.test:
         i = row.Index
         a = A[i - 2 : i + 1].copy()
 
-        a["player_name"] = a[["nickname", "player_name"]].apply(
-            lambda x: x[0] if x[0] else x[1], axis=1
-        )
+        a["player_name"] = a[["nickname", "player_name"]].apply(lambda x: x[0] if x[0] else x[1], axis=1)
 
         g = list(games[games.game_id == a.game_id.values[0]].itertuples())[0]
         game_info = f"{g.game_date} {g.home_team_name} {g.home_score}-{g.away_score} {g.away_team_name}"
@@ -636,9 +596,7 @@ if args.test:
         a["gain_value"] = a.gain_value.apply(lambda x: "%.3f" % x)
         a["attacked_value"] = a.attacked_value.apply(lambda x: "%.3f" % x)
         a["g_vdep_value"] = a.g_vdep_value.apply(lambda x: "%.3f" % x)
-        a["time"] = a[["period_id", "time_seconds"]].apply(
-            lambda x: get_time(*x), axis=1
-        )
+        a["time"] = a[["period_id", "time_seconds"]].apply(lambda x: get_time(*x), axis=1)
         cols = [
             "freeze_frame_360",
             "visible_area_360",
@@ -688,9 +646,9 @@ if args.test:
         j += 1
 
 
-"""Analyze team defense"""
-# To consider teams advancing to the konckout stage, select the teams
-if args.game == "euro2020":
+# 5. Analyze team defense
+# To consider teams advancing to the knockout stage, select the teams
+if args.game == "euro2020" or args.game == "wc2022":
     # Group Stage and Round of 16
     analysis_games_list = []
     for id, stage in zip(games["game_id"], games["competition_stage"]):
@@ -698,10 +656,7 @@ if args.game == "euro2020":
             analysis_games_list.append(id)
     A = A[A["game_id"].isin(analysis_games_list)]
     knockout_teams_list = (
-        games[games["competition_stage"] == "Round of 16"]
-        .filter(like="team_name", axis=1)
-        .values.ravel()
-        .tolist()
+        games[games["competition_stage"] == "Round of 16"].filter(like="team_name", axis=1).values.ravel().tolist()
     )
 
 elif args.game == "euro2022":
@@ -712,10 +667,7 @@ elif args.game == "euro2022":
             analysis_games_list.append(id)
     A = A[A["game_id"].isin(analysis_games_list)]
     knockout_teams_list = (
-        games[games["competition_stage"] == "Quarter-finals"]
-        .filter(like="team_name", axis=1)
-        .values.ravel()
-        .tolist()
+        games[games["competition_stage"] == "Quarter-finals"].filter(like="team_name", axis=1).values.ravel().tolist()
     )
 
 analysis_games_df = games[(games["game_id"].isin(analysis_games_list))]
@@ -733,15 +685,10 @@ concedes_ser = pd.Series(
 )
 
 team_values_df = (
-    A[["defense_team", "gain_value", "attacked_value", "g_vdep_value"]]
-    .groupby(["defense_team"])
-    .mean()
-    .reset_index()
+    A[["defense_team", "gain_value", "attacked_value", "g_vdep_value"]].groupby(["defense_team"]).mean().reset_index()
 )
 
-result_df = team_values_df[
-    team_values_df["defense_team"].isin(knockout_teams_list).values
-].reset_index(drop=True)
+result_df = team_values_df[team_values_df["defense_team"].isin(knockout_teams_list).values].reset_index(drop=True)
 result_df = pd.merge(result_df, concedes_ser, left_on="defense_team", right_index=True)
 result_df = result_df.reindex(
     columns=[
@@ -768,17 +715,17 @@ for v in itertools.combinations(result_df.columns.values.tolist()[1:], 2):
     print(f"P-value : {p_value:.5f}")
 
     # Plot a figure
-    fig_team = plt.figure(figsize=(8, 6))
+    fig_team = plt.figure(figsize=(16, 9))
     ax_team = fig_team.add_subplot(111)
     ax_team.scatter(result_df[x], result_df[y], c="blue")
-    ax_team.set_xlabel(result_df[x].name, size=16)
-    ax_team.set_ylabel(result_df[y].name, size=16)
+    ax_team.set_xlabel(result_df[x].name, size=24)
+    ax_team.set_ylabel(result_df[y].name, size=24)
     text_team = [
         ax_team.text(
             result_df.at[index, x],
             result_df.at[index, y],
             result_df.at[index, "defense_team"],
-            fontsize=12,
+            fontsize=16,
             color="black",
             zorder=500,
         )
@@ -787,7 +734,7 @@ for v in itertools.combinations(result_df.columns.values.tolist()[1:], 2):
     adjust_text(text_team)
     ax_team.tick_params(
         axis="both",
-        labelsize=12,
+        labelsize=16,
         grid_color="lightgray",
         grid_alpha=0.5,
     )
