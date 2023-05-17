@@ -348,7 +348,7 @@ if args.show_f1scores:
     fig, axes = plt.subplots(
         2,
         2,
-        figsize=(16, 12),
+        figsize=(16, 9),
         sharex="col",
         sharey=True,
     )
@@ -370,9 +370,11 @@ if args.show_f1scores:
 
         # set details
         ax.set_ylim(0, 0.9)
-        ax.tick_params(axis="both", labelsize=24)
+        ax.tick_params(axis="both", labelsize=20)
         ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(0.1))
 
+    fig.supxlabel("the number of nearest attacker/defender to the ball (n_nearest)", fontsize=32)
+    fig.supylabel("F1-scores", fontsize=32)
     plt.tight_layout()
     fig.savefig(os.path.join(figuredir, "prob_all.png"))
     print(os.path.join(figuredir, "prob_all.png") + " is saved")
