@@ -44,12 +44,7 @@ parser.add_argument("--grid_search", action="store_true")
 parser.add_argument("--split_train_eval", action="store_true")
 parser.add_argument("--skip_train", action="store_true")
 parser.add_argument("--test", action="store_true")
-parser.add_argument(
-    "--teamView",
-    type=str,
-    default="",
-    help="Please set the name of the country, not the name of the team",
-)
+parser.add_argument("--teamView", type=str, default="", help="Please set the name of the country, not the name of the team",)
 parser.add_argument("--pickle", type=int, default=4)
 args, _ = parser.parse_known_args()
 
@@ -91,9 +86,7 @@ else:
             os.makedirs(data_folder)
             DLoader = PublicWyscoutLoader(root=data_folder, download=True)
         else:
-            DLoader = WyscoutLoader(
-                root=data_folder, getter="local"
-            )  # (root='https://apirest.wyscout.com/v2/', getter='remote') #
+            DLoader = WyscoutLoader(root=data_folder, getter="local")  # (root='https://apirest.wyscout.com/v2/', getter='remote') #
 
     if args.data == "statsbomb":  # No competition and season information in wyscout!!!!
         # View all available competitions
@@ -142,16 +135,8 @@ else:
         spadlstore["teams"] = teams
         spadlstore["players"] = players[["player_id", "player_name", "nickname"]].drop_duplicates(subset="player_id")
         spadlstore["player_games"] = players[
-            [
-                "player_id",
-                "game_id",
-                "team_id",
-                "is_starter",
-                "starting_position_id",
-                "starting_position_name",
-                "minutes_played",
+            ["player_id","game_id","team_id","is_starter","starting_position_id","starting_position_name","minutes_played"]
             ]
-        ]
         for game_id in actions.keys():
             spadlstore[f"actions/game_{game_id}"] = actions[game_id]
 
@@ -194,10 +179,7 @@ else:
         fs.penetration,  # add
     ]
 
-    for game in tqdm.tqdm(
-        list(games.itertuples()),
-        desc=f"Generating and storing features in {features_h5}",
-    ):
+    for game in tqdm.tqdm(list(games.itertuples()),desc=f"Generating and storing features in {features_h5}",):
         actions = pd.read_hdf(spadl_h5, f"actions/game_{game.game_id}")
         gamestates = fs.gamestates(spadl.add_names_360(actions), nb_prev_actions)
         # gamestates = fs.play_left_to_right(gamestates, game.home_team_id)
@@ -450,13 +432,7 @@ else:
     print(os.path.join(datafolder, "VDEPmodel_" + model_str + ".pkl") + " is saved")
 
     # Evaluate the model
-    from sklearn.metrics import (
-        brier_score_loss,
-        confusion_matrix,
-        f1_score,
-        log_loss,
-        roc_auc_score,
-    )
+    from sklearn.metrics import brier_score_loss, confusion_matrix, f1_score, log_loss, roc_auc_score
 
     def evaluate_metrics(y: pd.Series, y_hat: pd.Series) -> float:
         """
@@ -691,14 +667,8 @@ team_values_df = (
 result_df = team_values_df[team_values_df["defense_team"].isin(knockout_teams_list).values].reset_index(drop=True)
 result_df = pd.merge(result_df, concedes_ser, left_on="defense_team", right_index=True)
 result_df = result_df.reindex(
-    columns=[
-        "defense_team",
-        "concedes",
-        "gain_value",
-        "attacked_value",
-        "g_vdep_value",
-    ]
-)
+    columns=["defense_team","concedes","gain_value","attacked_value","g_vdep_value",]
+    )
 
 # Plot figures about defense values of the teams in Euro 2020 or 2022
 for v in itertools.combinations(result_df.columns.values.tolist()[1:], 2):
@@ -711,21 +681,24 @@ for v in itertools.combinations(result_df.columns.values.tolist()[1:], 2):
 
     r, p_value = pearsonr(result_df[x].values, result_df[y].values)
     print(f"### {x} - {y} ###")
-    print(f"r : {r:.5f}")
-    print(f"P-value : {p_value:.5f}")
+    print(f"r : {r}")
+    print(f"P-value : {p_value}")
 
     # Plot a figure
     fig_team = plt.figure(figsize=(16, 9))
     ax_team = fig_team.add_subplot(111)
     ax_team.scatter(result_df[x], result_df[y], c="blue")
-    ax_team.set_xlabel(result_df[x].name, size=24)
-    ax_team.set_ylabel(result_df[y].name, size=24)
+    if x == "concedes":
+        ax_team.set_xlabel("Total " + result_df[x].name + " per team", size=32)
+    else:
+        ax_team.set_xlabel(result_df[x].name + " averaged per team", size=32)
+    ax_team.set_ylabel(result_df[y].name + " averaged per team", size=32)
     text_team = [
         ax_team.text(
             result_df.at[index, x],
             result_df.at[index, y],
             result_df.at[index, "defense_team"],
-            fontsize=16,
+            fontsize=24,
             color="black",
             zorder=500,
         )
@@ -734,7 +707,7 @@ for v in itertools.combinations(result_df.columns.values.tolist()[1:], 2):
     adjust_text(text_team)
     ax_team.tick_params(
         axis="both",
-        labelsize=16,
+        labelsize=24,
         grid_color="lightgray",
         grid_alpha=0.5,
     )
