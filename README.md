@@ -1,6 +1,6 @@
 # Generalized-VDEP
-Generalized VDEP is a generalisation of an existing indicator (VDEP).
-We hope that this indicator will allow quantitative ealuations of defensive teams in football.
+Generalized VDEP is a method of the evaluation of team defense in football.
+We hope that this indicator will allow you to quantitatively evaluate football tactics.
 
 ## Requirements
 
