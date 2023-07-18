@@ -16,23 +16,21 @@ import socceraction.vdep.features as fs
 
 pd.set_option("display.max_columns", None)
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
-warnings.filterwarnings(
-    action="ignore", message="credentials were not supplied. open data access only"
-)
+warnings.filterwarnings(action="ignore", message="credentials were not supplied. open data access only")
 
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--game", type=str, default="all")
+parser.add_argument("--data", type=str, default="statsbomb")
+parser.add_argument("--date", type=str, default="")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--numProcess", type=int, default=16)
 parser.add_argument("--grid_search", action="store_true")
 parser.add_argument("--predict_actions", action="store_true")
 parser.add_argument("--calculate_f1scores", action="store_true")
 parser.add_argument("--show_f1scores", action="store_true")
-parser.add_argument(
-    "--pickle", type=int, default=4, help="if using python 3.9 or over, please use 5"
-)
+parser.add_argument("--pickle", type=int, default=4, help="if using python 3.9 or over, please use 5")
 args, _ = parser.parse_known_args()
 
 pickle.HIGHEST_PROTOCOL = args.pickle  # 4 is the highest in an older version of pickle
@@ -43,13 +41,9 @@ start = time.time()
 
 """Preparation"""
 if "euro" in args.game:
-    datafolder = "../data-statsbomb/vdep/" + args.game
+    datafolder = f"../GVDEP_data/data-{args.data}/{args.date}/" + args.game
     os.makedirs(datafolder, exist_ok=True)
     spadl_h5 = os.path.join(datafolder, "spadl-statsbomb.h5")
-elif "jleague" in args.game:
-    datafolder = "../data-jleague/gvdep/2020&2021"
-    os.makedirs(datafolder, exist_ok=True)
-    spadl_h5 = os.path.join(datafolder, "spadl-jleague.h5")
 
 features_h5 = os.path.join(datafolder, "features.h5")
 labels_h5 = os.path.join(datafolder, "labels.h5")
@@ -210,24 +204,11 @@ if args.calculate_f1scores:
             evalX, evalY, _ = getXY(evalgames_k, Xcols)
             trainX_vaep, _, _ = getXY(traingames_k, Xcols_vaep)
             evalX_vaep, _, _ = getXY(evalgames_k, Xcols_vaep)
-            print(
-                "trainX_vaep:",
-                trainX_vaep.columns.values.tolist(),
-                ", length: ",
-                str(len(trainX_vaep.columns.values.tolist())),
-            )
-            print(
-                "trainX:",
-                trainX.columns.values.tolist(),
-                ", length: ",
-                str(len(trainX.columns.values.tolist())),
-            )
+            print("trainX_vaep:",trainX_vaep.columns.values.tolist(),", length: ",str(len(trainX_vaep.columns.values.tolist())),)
+            print("trainX:",trainX.columns.values.tolist(),", length: ",str(len(trainX.columns.values.tolist())),)
 
-            f1scores = np.empty(len(trainY.columns))
             for col in list(trainY.columns):
-                print(
-                    f"training {col}\n positive: {trainY[col].sum()} negative: {len(trainY[col]) - trainY[col].sum()}"
-                )
+                print(f"training {col}\n positive: {trainY[col].sum()} negative: {len(trainY[col]) - trainY[col].sum()}")
 
                 model = xgboost.XGBClassifier(
                     n_estimators=50,
@@ -288,9 +269,7 @@ if args.calculate_f1scores:
                 p = sum(y) / len(y)
                 base = [p] * len(y)
                 brier = brier_score_loss(y, y_hat)
-                print(
-                    f"  Brier score: {brier:.5f}, {(brier / brier_score_loss(y, base)):.5f}"
-                )
+                print(f"  Brier score: {brier:.5f}, {(brier / brier_score_loss(y, base)):.5f}")
                 ll = log_loss(y, y_hat)
                 print(f"  log loss score: {ll:.5f}, {(ll / log_loss(y, base)):.5f}")
                 print(f"  ROC AUC: {roc_auc_score(y, y_hat):.5f}")
@@ -298,17 +277,20 @@ if args.calculate_f1scores:
                 y_hat_bi = y_hat.round()
                 print(f"F1 score:{f1_score(y, y_hat_bi)}")
                 print(confusion_matrix(y, y_hat_bi))
-                return f1_score(y, y_hat_bi)
+                return {
+                    "f1score": f1_score(y, y_hat_bi),
+                    "auc": roc_auc_score(y, y_hat),
+                    "brier": brier_score_loss(y, y_hat)
+                    }
 
+            statistics = {}
             for i, col in enumerate(evalY.columns):
                 if col == "scores" or col == "concedes":
                     Y_hat[col] = [p[1] for p in models[col].predict_proba(evalX_vaep)]
                 elif col == "gains" or col == "effective_attack":
                     Y_hat[col] = [p[1] for p in models[col].predict_proba(evalX)]
-                print(
-                    f"### Y: {col} ###\n positive: {evalY[col].sum()} negative: {len(evalY[col]) - evalY[col].sum()}"
-                )
-                f1scores[i] = evaluate_metrics(evalY[col], Y_hat[col])
+                print(f"### Y: {col} ###\n positive: {evalY[col].sum()} negative: {len(evalY[col]) - evalY[col].sum()}")
+                statistics[col] = evaluate_metrics(evalY[col], Y_hat[col])
 
             A = []
             for game_id in tqdm.tqdm(games.game_id, "Loading game ids"):
@@ -319,15 +301,13 @@ if args.calculate_f1scores:
 
             # concatenate action game id rows with predictions and save per game
             grouped_predictions = pd.concat([A, Y_hat], axis=1).groupby("game_id")
-            for k, df in tqdm.tqdm(
-                grouped_predictions, desc="Saving predictions per game"
-            ):
+            for k, df in tqdm.tqdm(grouped_predictions, desc="Saving predictions per game"):
                 df = df.reset_index(drop=True)
                 df[Y_hat.columns].to_hdf(predictions_h5, f"game_{int(k)}")
 
             # save static variables
             static_pkl = os.path.join(modelfolder, "static" + model_str + ".pkl")
-            static = [args, f1scores, drop_index]
+            static = [args, statistics, drop_index]
             with open(static_pkl, "wb") as f:
                 pickle.dump(static, f, protocol=4)
                 print(static_pkl + " is saved")
@@ -346,58 +326,69 @@ if args.show_f1scores:
     cols = ["scores", "concedes", "gains", "effective_attack", "n_nearest"]
 
     # Make the dataframe about F1-scores grouped by 'n_nearest'
+    f1scores = []
+    aucs = []
+    briers = []
     for n_nearest in range(12):
         for cv in range(1, 11, 1):
             model_str = f"static_CV_{cv}_10_all_{n_nearest}_nearest"
             with open(os.path.join(modelfolder, model_str + ".pkl"), "rb") as f:
-                args, f1scores, drop_index = pickle.load(f)
-                print(f1scores)
-            if cv == 1:
-                f1cv_array = np.insert(f1scores, 4, n_nearest)
-            else:
-                f1cv_array = np.vstack([f1cv_array, np.insert(f1scores, 4, n_nearest)])
+                args, statistics, drop_index = pickle.load(f)
+            
+            f1scores.append(
+                [statistics["scores"]["f1score"], statistics["concedes"]["f1score"], 
+                statistics["gains"]["f1score"], statistics["effective_attack"]["f1score"],
+                n_nearest]
+            )
+            aucs.append(
+                [statistics["scores"]["auc"], statistics["concedes"]["auc"], 
+                statistics["gains"]["auc"], statistics["effective_attack"]["auc"],
+                n_nearest]
+            )
+            briers.append(
+                [statistics["scores"]["brier"], statistics["concedes"]["brier"], 
+                statistics["gains"]["brier"], statistics["effective_attack"]["brier"],
+                n_nearest]
+            )
+            
 
-        if n_nearest == 0:
-            f1cv_arrays = f1cv_array
-        else:
-            f1cv_arrays = np.vstack([f1cv_arrays, f1cv_array])
-
-    df_f1cv = pd.DataFrame(f1cv_arrays, columns=cols)
-    df_f1 = df_f1cv.groupby("n_nearest")
+    gruopby = {
+        "f1scores": pd.DataFrame(f1scores, columns=cols).groupby("n_nearest"),
+        "aucs": pd.DataFrame(aucs, columns=cols).groupby("n_nearest"),
+        "briers": pd.DataFrame(briers, columns=cols).groupby("n_nearest"),
+    }
 
     # Show figures by Prediction of the Probabilities
-    subplots = ["(a)", "(b)", "(c)", "(d)"]
-    fig, axes = plt.subplots(
-        2,
-        2,
-        figsize=(16, 12),
-        sharex="col",
-        sharey=True,
-    )
-    # plt.subplots_adjust(hspace=0.2)
-    for prob in range(4):
-        ax = axes[prob // 2, prob % 2]
-        # ax.set_title(f'{cols[prob]}')
-        ax.boxplot(
-            [df_f1.get_group(n).iloc[:, prob] for n in range(12)],
-            labels=[f"{n}" for n in range(12)],
-            showmeans=True,
-            zorder=10,
-            patch_artist=True,
-            boxprops=dict(facecolor="white"),
-            medianprops=dict(color="blue"),
-            flierprops=dict(marker="x", markeredgecolor="black"),
-        )
-        ax.set_title(subplots[prob], fontsize=24, loc="left")
+    for key in gruopby:
+        subplots = ["(a)", "(b)", "(c)", "(d)"]
+        fig, axes = plt.subplots(2,2,figsize=(12, 9),sharex="col",sharey=True,)
+        # plt.subplots_adjust(hspace=0.2)
+        for prob in range(4):
+            ax = axes[prob // 2, prob % 2]
+            # ax.set_title(f'{cols[prob1]}')
+            ax.boxplot(
+                [gruopby[key].get_group(n).iloc[:, prob] for n in range(12)],
+                labels=[f"{n}" for n in range(12)],
+                showmeans=True,
+                zorder=10,
+                patch_artist=True,
+                boxprops=dict(facecolor="white"),
+                medianprops=dict(color="blue"),
+                flierprops=dict(marker="x", markeredgecolor="black"),
+            )
+            ax.set_title(subplots[prob], fontsize=24, loc="left")
 
-        # set details
-        ax.set_ylim(0, 0.9)
-        ax.tick_params(axis="both", labelsize=24)
-        ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(0.1))
+            # set details
+            ax.set_ylim(0, 1.0)
+            ax.tick_params(axis="both", labelsize=20)
+            ax.yaxis.set_major_locator(mpl.ticker.MultipleLocator(0.1))
 
-    plt.tight_layout()
-    fig.savefig(os.path.join(figuredir, "prob_all.png"))
-    print(os.path.join(figuredir, "prob_all.png") + " is saved")
-    plt.show()
+        fig.supxlabel("the number of nearest attacker/defender to the ball (n_nearest)", fontsize=32)
+        fig.supylabel(f"{key}", fontsize=32)
+        plt.tight_layout()
+        fig.savefig(os.path.join(figuredir, f"{key}_probs.png"))
+        print(os.path.join(figuredir, f"{key}_probs.png") + " is saved")
+        plt.clf()
+        plt.close()
 
 pdb.set_trace()

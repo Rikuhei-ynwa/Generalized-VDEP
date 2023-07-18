@@ -7,6 +7,8 @@ import pandas as pd
 from matplotlib.patches import Arc
 from matplotlib.pyplot import cm
 
+import socceraction.spadl.config as spadlconfig
+
 spadl_config = {
     "length": 105,
     "width": 68,
@@ -21,6 +23,15 @@ spadl_config = {
     "origin_y": 0,
     "circle_radius": 9.15,
 }
+
+attacking_actions =[
+    'pass', 'dribble', 'bad_touch', 'throw_in', 'take_on', 'cross', 'shot', 'goalkick',
+    'freekick_short', 'freekick_crossed', 'corner_crossed', 'corner_short', 'shot_penalty', 'shot_freekick'
+]
+
+defending_actions = [
+    'interception', 'tackle', 'clearance', 'keeper_claim', 'keeper_save', 'keeper_punch',
+]
 
 zline = 8000
 
@@ -372,12 +383,23 @@ def actions_individual(
     blue_markers = iter(list(cm.Blues(np.linspace(0.1, 0.8, blue_n))))
     orange_markers = iter(list(cm.Oranges(np.linspace(0.1, 0.8, orange_n))))
 
-    for ty, r, loc, color, line in zip(action_type, result, location, colors, lines):
+    eg = action_type[2]
+    for ty, r, loc, color, line, te in zip(action_type, result, location, colors, lines, teams):
         [sx, sy, ex, ey] = loc
         if color == "blue":
             c = next(blue_markers)
-        elif color == "orange":
+        elif (color == "orange") and (ty in attacking_actions) and (eg in defending_actions):
+            sx, ex = spadlconfig.field_length - sx, spadlconfig.field_length - ex
+            sy, ey = spadlconfig.field_width - sy, spadlconfig.field_width - ey
             c = next(orange_markers)
+        elif (color == "orange") and (ty in attacking_actions) and (eg in attacking_actions):
+            c = next(orange_markers)
+        elif (color == "black") and (te != teamView) and (eg in defending_actions):
+            sx, ex = spadlconfig.field_length - sx, spadlconfig.field_length - ex
+            sy, ey = spadlconfig.field_width - sy, spadlconfig.field_width - ey
+            c = "black"
+        elif (color == "black") and (te != teamView) and (eg in attacking_actions):
+            c = "black"
         else:
             c = "black"
 
@@ -427,26 +449,11 @@ def actions_individual(
         players_aty = np.asarray(coordinates[1:23:2])
         players_dfx = np.asarray(coordinates[22:44:2])
         players_dfy = np.asarray(coordinates[23:45:2])
-        if (teams[2] == teamView) & (
-            action_type[2]
-            in [
-                "interception",
-                "tackle",
-                "clearance",
-                "foul",
-                "keeper_claim",
-                "keeper_punch",
-                "keeper_save",
-                "keeper_pick_up",
-            ]
-        ):
-            dc = "blue"
-            ac = "orange"
-        elif teams[2] == teamView:
+        if teams[2] == teamView:
             ac = "blue"
             dc = "orange"
         else:
-            ac = "orange" "blue"
+            ac = "orange"
             dc = "blue"
 
     if visible_area is not None:
@@ -456,15 +463,9 @@ def actions_individual(
             visible_area_ys = np.empty(1)
         else:
             MAX_LENGTH_VISIBLE = 120
-            visible_area_xs = np.asarray(visible_area[::2])
-            visible_area_ys = np.asarray(visible_area[1::2])
-            if action_type[2] == "take_on":
-                visible_area_xs = MAX_LENGTH_VISIBLE - visible_area_xs
-            visible_area_xs = visible_area_xs - (
-                MAX_LENGTH_VISIBLE - spadl_config["length"]
-            )
-            if action_type[2] != "take_on":
-                visible_area_ys = spadl_config["width"] - visible_area_ys
+            MAX_WIDTH_VISIBLE = 80
+            visible_area_xs = ((np.asarray(visible_area[::2]) - 1) / (MAX_LENGTH_VISIBLE - 1)) * spadlconfig.field_length
+            visible_area_ys = spadlconfig.field_width - ((np.asarray(visible_area[1::2]) - 1) / (MAX_WIDTH_VISIBLE - 1)) * spadlconfig.field_width
     else:
         visible_area_xs = np.empty(1)
         visible_area_ys = np.empty(1)
