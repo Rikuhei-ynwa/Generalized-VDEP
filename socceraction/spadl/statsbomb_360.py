@@ -147,54 +147,6 @@ def extract_player_games(events: pd.DataFrame) -> pd.DataFrame:
     return pg
 
 
-def convert_to_actions(events: pd.DataFrame, home_team_id: int) -> pd.DataFrame:
-    events["extra"] = events["extra"].fillna({})
-    events = events.fillna(0)
-
-    actions = pd.DataFrame()
-    actions["game_id"] = events.game_id  # match_id
-    actions["period_id"] = events.period_id  # period
-    actions["time_seconds"] = (
-        60 * events.minute - ((actions["period_id"] == 2) * 45 * 60) + events.second
-    )
-    actions["timestamp"] = events.timestamp
-    actions["team_id"] = events.team_id
-    actions["player_id"] = events.player_id
-
-    actions["start_x"] = events.location.apply(lambda x: x[0] if x else 1)
-    actions["start_y"] = events.location.apply(lambda x: x[1] if x else 1)
-    actions["start_x"] = ((actions["start_x"] - 1) / 119) * spadlconfig.field_length
-    actions["start_y"] = 68 - ((actions["start_y"] - 1) / 79) * spadlconfig.field_width
-
-    end_location = events[["location", "extra"]].apply(_get_end_location, axis=1)
-    actions["end_x"] = end_location.apply(lambda x: x[0] if x else 1)
-    actions["end_y"] = end_location.apply(lambda x: x[1] if x else 1)
-    actions["end_x"] = ((actions["end_x"] - 1) / 119) * spadlconfig.field_length
-    actions["end_y"] = 68 - ((actions["end_y"] - 1) / 79) * spadlconfig.field_width
-
-    actions["type_id"] = events[["type_name", "extra"]].apply(_get_type_id, axis=1)
-    actions["result_id"] = events[["type_name", "extra"]].apply(_get_result_id, axis=1)
-    actions["bodypart_id"] = events[["type_name", "extra"]].apply(
-        _get_bodypart_id, axis=1
-    )
-
-    actions = (
-        actions[actions.type_id != spadlconfig.actiontypes.index("non_action")]
-        .sort_values(["game_id", "period_id", "time_seconds", "timestamp"])
-        .reset_index(drop=True)
-    )
-    actions = _fix_direction_of_play(actions, home_team_id)
-    actions = _fix_clearances(actions)
-
-    actions["action_id"] = range(len(actions))
-    actions = _add_dribbles(actions)
-
-    for col in actions.columns:
-        if "_id" in col:
-            actions[col] = actions[col].astype(int)
-    return actions
-
-
 def convert_to_actions_360(events: pd.DataFrame, home_team_id: int) -> pd.DataFrame:
     """
     Convert StatsBomb events to SPADL actions + 360
@@ -222,14 +174,15 @@ def convert_to_actions_360(events: pd.DataFrame, home_team_id: int) -> pd.DataFr
 
     actions["start_x"] = events.location.apply(lambda x: x[0] if x else 1)
     actions["start_y"] = events.location.apply(lambda x: x[1] if x else 1)
+    # The same as Socceraction
     actions["start_x"] = ((actions["start_x"] - 1) / 119) * spadlconfig.field_length
-    actions["start_y"] = 68 - ((actions["start_y"] - 1) / 79) * spadlconfig.field_width
+    actions["start_y"] = spadlconfig.field_width - ((actions["start_y"] - 1) / 79) * spadlconfig.field_width
 
     end_location = events[["location", "extra"]].apply(_get_end_location, axis=1)
     actions["end_x"] = end_location.apply(lambda x: x[0] if x else 1)
     actions["end_y"] = end_location.apply(lambda x: x[1] if x else 1)
     actions["end_x"] = ((actions["end_x"] - 1) / 119) * spadlconfig.field_length
-    actions["end_y"] = 68 - ((actions["end_y"] - 1) / 79) * spadlconfig.field_width
+    actions["end_y"] = spadlconfig.field_width - ((actions["end_y"] - 1) / 79) * spadlconfig.field_width
 
     actions["type_id"] = events[["type_name", "extra"]].apply(_get_type_id, axis=1)
     actions["result_id"] = events[["type_name", "extra"]].apply(_get_result_id, axis=1)
@@ -258,7 +211,7 @@ def convert_to_actions_360(events: pd.DataFrame, home_team_id: int) -> pd.DataFr
                 (location[nonnanindex, 0] - 1) / 119
             ) * spadlconfig.field_length
             location[nonnanindex, 1] = (
-                68 - ((location[nonnanindex, 1] - 1) / 79) * spadlconfig.field_width
+                spadlconfig.field_width - ((location[nonnanindex, 1] - 1) / 79) * spadlconfig.field_width
             )
             location_copy = location.copy()
             ball_location = np.array(
@@ -350,46 +303,30 @@ def _get_freeze_frame_360(q):
                 for pl in range(len(freeze_frame_360)):
                     if freeze_frame_360[pl]["teammate"]:
                         if freeze_frame_360[pl]["keeper"]:
-                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl]["location"]
                         else:
-                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl]["location"]
                             atk += 1
                     else:
                         if freeze_frame_360[pl]["keeper"]:
-                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl]["location"]
                         else:
-                            locations[
-                                (dfd + 11) * 2 : (dfd + 12) * 2
-                            ] = freeze_frame_360[pl]["location"]
+                            locations[(dfd + 11) * 2 : (dfd + 12) * 2] = freeze_frame_360[pl]["location"]
                             dfd += 1
 
             elif event in ["Interception", "Own Goal Against"]:
                 for pl in range(len(freeze_frame_360)):
                     if freeze_frame_360[pl]["teammate"]:
                         if freeze_frame_360[pl]["keeper"]:
-                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl]["location"]
                         else:
-                            locations[
-                                (dfd + 11) * 2 : (dfd + 12) * 2
-                            ] = freeze_frame_360[pl]["location"]
+                            locations[(dfd + 11) * 2 : (dfd + 12) * 2] = freeze_frame_360[pl]["location"]
                             dfd += 1
                     else:
                         if freeze_frame_360[pl]["keeper"]:
-                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl]["location"]
                         else:
-                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl][
-                                "location"
-                            ]
+                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl]["location"]
                             atk += 1
             return locations
     pdb.set_trace()

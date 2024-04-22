@@ -32,12 +32,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--data", type=str, default="statsbomb")
 parser.add_argument("--game", type=str, default="all")
 parser.add_argument("--feature", type=str, default="all")
-parser.add_argument("--datadir", type=str, default="")
+parser.add_argument(
+    "--date_opendata", type=int, default=0, required=True, 
+    help="Since statsbomb data is constantly being updated, it is important to indicate in advance when the data was downloaded."
+    )
+parser.add_argument(
+    "--date_experiment", type=int, default=0, required=True,
+    help="The date of the experiment is important because the data is constantly being updated."
+    )
 parser.add_argument("--no_games", type=int, default=0)
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--n_nearest", type=int, default=11)
 parser.add_argument("--numProcess", type=int, default=16)
-parser.add_argument("--skip_load_rawdata", action="store_true")
+parser.add_argument("--skip_convert_rawdata", action="store_true")
 parser.add_argument("--skip_preprocess", action="store_true")
 parser.add_argument("--predict_actions", action="store_true")
 parser.add_argument("--grid_search", action="store_true")
@@ -53,16 +60,15 @@ numProcess = args.numProcess
 os.environ["OMP_NUM_THREADS"] = str(numProcess)
 
 start = time.time()
-data_dir = args.datadir
 
 random.seed(args.seed)
 np.random.seed(args.seed)
 
-datafolder = f"../GVDEP_data/data-{args.data}/" + args.game
+datafolder = f"../GVDEP_data/data-{args.data}/{args.game}/{args.date_experiment}"
 os.makedirs(datafolder, exist_ok=True)
 
 # 1. load and convert statsbomb data
-if args.skip_load_rawdata:
+if args.skip_convert_rawdata:
     print("loading rawdata is skipped")
 else:
     """Set up the Loader"""
@@ -74,7 +80,8 @@ else:
         # DLoader = StatsBombLoader(getter="remote", creds={"user": None, "passwd": None})
 
         # Uncomment the code below if you have a local folder on your computer with statsbomb data
-        data_folder = "../statsbomb-open-rawdata/data"  # Example of local folder with statsbomb data
+        # Caution: the data is constantly updated, so make sure you have the version with the date you want
+        data_folder = f"../open-rawdata-{args.date_opendata}/data"  # Example of local folder with statsbomb data
         DLoader = StatsBombLoader(root=data_folder, getter="local")
 
     elif args.data == "wyscout":
@@ -106,6 +113,9 @@ else:
             ]
         else:  # All data
             selected_competitions = competitions
+
+    else:
+        raise ValueError("Please set the data to 'statsbomb'.")
 
     # Get games from all selected competitions
     games = pd.concat([DLoader.games(row.competition_id, row.season_id) for row in selected_competitions.itertuples()])
