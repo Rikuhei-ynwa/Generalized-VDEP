@@ -67,88 +67,16 @@ np.random.seed(args.seed)
 datafolder = f"../GVDEP_data/data-{args.data}/{args.game}/{args.date_experiment}"
 os.makedirs(datafolder, exist_ok=True)
 
+
 # 1. load and convert statsbomb data
 if args.skip_convert_rawdata:
     print("loading rawdata is skipped")
 else:
-    """Set up the Loader"""
-    # https://socceraction.readthedocs.io/en/latest/documentation/providers.html
+    import convert_rawdata as crd
+    DLoader = crd.set_DLoader(args)
+    games, selected_competitions = crd.select_games(DLoader, args)
+    actions = crd.store_converted_data(DLoader, datafolder, games, selected_competitions)
 
-    if args.data == "statsbomb":
-        # Use this if you want to use the free public statsbomb data
-        # or provide credentials to access the API
-        # DLoader = StatsBombLoader(getter="remote", creds={"user": None, "passwd": None})
-
-        # Uncomment the code below if you have a local folder on your computer with statsbomb data
-        # Caution: the data is constantly updated, so make sure you have the version with the date you want
-        data_folder = f"../open-rawdata-{args.date_opendata}/data"  # Example of local folder with statsbomb data
-        DLoader = StatsBombLoader(root=data_folder, getter="local")
-
-    elif args.data == "wyscout":
-        # Wyscout
-        # https://www.nature.com/articles/s41597-019-0247-7
-        # https://socceraction.readthedocs.io/en/latest/modules/generated/socceraction.data.wyscout.PublicWyscoutLoader.html
-        data_folder = "../Wyscout-open-data/"
-        if not os.path.isdir(data_folder):
-            os.makedirs(data_folder)
-            DLoader = PublicWyscoutLoader(root=data_folder, download=True)
-        else:
-            DLoader = WyscoutLoader(root=data_folder, getter="local")  # (root='https://apirest.wyscout.com/v2/', getter='remote') #
-
-    if args.data == "statsbomb":  # No competition and season information in wyscout!!!!
-        # View all available competitions
-        competitions = DLoader.competitions()
-        set(competitions.competition_name)
-        if args.game == "wc2022":
-            selected_competitions = competitions[
-                (competitions.competition_name == "FIFA World Cup") & (competitions.season_name == "2022")
-            ]
-        elif args.game == "euro2020":
-            selected_competitions = competitions[
-                (competitions.competition_name == "UEFA Euro") & (competitions.season_name == "2020")
-            ]
-        elif args.game == "euro2022":
-            selected_competitions = competitions[
-                (competitions.competition_name == "UEFA Women's Euro") & (competitions.season_name == "2022")
-            ]
-        else:  # All data
-            selected_competitions = competitions
-
-    else:
-        raise ValueError("Please set the data to 'statsbomb'.")
-
-    # Get games from all selected competitions
-    games = pd.concat([DLoader.games(row.competition_id, row.season_id) for row in selected_competitions.itertuples()])
-
-    # Store converted spadl data in a h5-file
-    games_verbose = tqdm.tqdm(list(games.itertuples()), desc="Loading game data")
-    teams, players, games_360 = [], [], []
-    actions = {}
-    for game in games_verbose:
-        events = DLoader.events(game.game_id, load_360=True)
-        # convert data
-        actions[game.game_id] = convert_to_actions_360(events, game.home_team_id)  # spadl.statsbomb.convert_to_actions
-
-        # load data
-        teams.append(DLoader.teams(game.game_id))
-        players.append(DLoader.players(game.game_id))
-        games_360.append(game.game_id)
-
-    teams = pd.concat(teams).drop_duplicates(subset="team_id")
-    players = pd.concat(players)
-
-    spadl_h5 = os.path.join(datafolder, "spadl-statsbomb.h5")
-    # Store all spadl data in h5-file
-    with pd.HDFStore(spadl_h5, pickle_protocol=4) as spadlstore:
-        spadlstore["competitions"] = selected_competitions
-        spadlstore["games"] = games
-        spadlstore["teams"] = teams
-        spadlstore["players"] = players[["player_id", "player_name", "nickname"]].drop_duplicates(subset="player_id")
-        spadlstore["player_games"] = players[
-            ["player_id","game_id","team_id","is_starter","starting_position_id","starting_position_name","minutes_played"]
-            ]
-        for game_id in actions.keys():
-            spadlstore[f"actions/game_{game_id}"] = actions[game_id]
 
 # Configure file and folder names
 spadl_h5 = os.path.join(datafolder, "spadl-statsbomb.h5")
@@ -157,52 +85,18 @@ labels_h5 = os.path.join(datafolder, "labels.h5")
 
 print(pd.read_hdf(spadl_h5, "competitions"))
 
+NB_PREV_ACTIONS = 1
 
 # 2. compute features and labels
-nb_prev_actions = 1
 if args.skip_preprocess:
     print("preprocessing is skipped")
 else:
+    import set_variables as sv
     games = pd.read_hdf(spadl_h5, "games")
     print("nb of games:", len(games))
-    # Compute features
-    xfns = [
-        fs.actiontype,
-        fs.actiontype_onehot,
-        fs.bodypart,
-        fs.bodypart_onehot,
-        fs.result,
-        fs.result_onehot,
-        fs.goalscore,
-        fs.startlocation,
-        fs.endlocation,
-        fs.movement,
-        fs.space_delta,
-        fs.startpolar,
-        fs.endpolar,
-        fs.team,
-        fs.time,
-        fs.time_delta,
-        fs.away_team,  # add
-        fs.player_loc_dist,  # add
-        fs.gain,  # add
-        fs.penetration,  # add
-    ]
 
-    for game in tqdm.tqdm(list(games.itertuples()),desc=f"Generating and storing features in {features_h5}",):
-        actions = pd.read_hdf(spadl_h5, f"actions/game_{game.game_id}")
-        gamestates = fs.gamestates(spadl.add_names_360(actions), nb_prev_actions)
-        # gamestates = fs.play_left_to_right(gamestates, game.home_team_id)
-        X = pd.concat([fn(gamestates) for fn in xfns], axis=1)
-        X.to_hdf(features_h5, f"game_{game.game_id}")
-
-    # Compute labels
-    yfns = [lab.gains, lab.effective_attack, lab.scores, lab.concedes]
-    g = 0
-    for game in tqdm.tqdm(list(games.itertuples()), desc=f"Computing and storing labels in {labels_h5}"):
-        actions = pd.read_hdf(spadl_h5, f"actions/game_{game.game_id}")
-        Y = pd.concat([fn(spadl.add_names_360(actions)) for fn in yfns], axis=1)
-        Y.to_hdf(labels_h5, f"game_{game.game_id}")
+    X = sv.compute_features(spadl_h5, features_h5, NB_PREV_ACTIONS)
+    Y = sv.compute_labels(spadl_h5, labels_h5, NB_PREV_ACTIONS)
 
 
 # 3. estimate scoring and conceding probabilities
@@ -214,27 +108,11 @@ if args.predict_actions:
 figuredir = datafolder + "/figures"
 os.makedirs(figuredir, exist_ok=True)
 predictions_h5 = os.path.join(datafolder, "predictions.h5")
-games = pd.read_hdf(spadl_h5, "games")
-print("nb of games:", len(games))
 
 # note: only for the purpose of this example and due to the small dataset,
 # we use the same data for training and evaluation
-if args.no_games < 10 and args.no_games > 0:
-    traingames = games[: args.no_games - 1]
-    testgames = games[args.no_games - 1 : args.no_games]
-    model_str = str(args.no_games) + "games"
-elif args.no_games >= 10 or args.no_games == 0:
-    split_traintest = int(9 * len(games) / 10)
-    traingames = games[:split_traintest]
-    testgames = games[split_traintest:]
-    model_str = str(args.no_games) + "games" if args.no_games >= 10 else "_traindata_all"
-elif args.no_games == -1:
-    traingames = games
-    testgames = games
-    model_str = "all"
-
-if args.n_nearest <= 11:
-    model_str += "_" + str(args.n_nearest) + "_nearest"
+import train_models as tm
+traingames, testgames, model_str = tm.set_conditions(args, spadl_h5)
 print("train/test of games:", len(traingames), "/", len(testgames))
 
 if args.skip_train:
@@ -264,7 +142,7 @@ else:
         fs.player_loc_dist,
     ]
 
-    Xcols = fs.feature_column_names(xfns, nb_prev_actions)
+    Xcols = fs.feature_column_names(xfns, NB_PREV_ACTIONS)
 
     def getXY(games: pd.DataFrame, Xcols: list):
         """
@@ -316,7 +194,7 @@ else:
             Xcols = Xcols[:52]
         else:
             Xcols_vaep = Xcols[:28] + Xcols[33:49]
-            Xcols = Xcols[24:28] + Xcols[31:49]
+            Xcols = Xcols[24:28] + Xcols[33:49]
     else:
         if args.predict_actions:
             Xcols_vaep = Xcols[: 52 + 8 * args.n_nearest]
@@ -325,10 +203,10 @@ else:
             Xcols_vaep = Xcols[:28] + Xcols[33:49] + Xcols[52 : 52 + 8 * args.n_nearest]
             Xcols = Xcols[24:28] + Xcols[33:49] + Xcols[52 : 52 + 8 * args.n_nearest]
 
-    X, Y, drop_index = getXY(traingames, Xcols)
+    trainX_vdep, trainY_vdep, drop_index = getXY(traingames, Xcols)
     trainX_vaep, _, _ = getXY(traingames, Xcols_vaep)
-    print("X:", list(X.columns), ", length: ", str(len(X.columns)))
-    print("Y:", list(Y.columns))
+    print("trainX_vdep:", list(trainX_vdep.columns), ", length: ", str(len(trainX_vdep.columns)))
+    print("trainY_vdep:", list(trainY_vdep.columns))
 
     testX, testY, _ = getXY(testgames, Xcols)
     testX_vaep, _, _ = getXY(testgames, Xcols_vaep)
@@ -349,8 +227,8 @@ else:
 
     from sklearn.model_selection import train_test_split
 
-    for col in list(Y.columns):
-        print(f"training {col} positive: {Y[col].sum()} negative: {len(Y[col]) - Y[col].sum()}")
+    for col in list(trainY_vdep.columns):
+        print(f"training {col} positive: {trainY_vdep[col].sum()} negative: {len(trainY_vdep[col]) - trainY_vdep[col].sum()}")
         model = xgboost.XGBClassifier(
             n_estimators=50,
             max_depth=5,
@@ -382,16 +260,16 @@ else:
         if col == "scores" or col == "concedes":
             if args.split_train_eval:
                 split_X, split_X_eval, split_Y, split_Y_eval = train_test_split(
-                    trainX_vaep, Y[col], random_state=args.seed, stratify=Y[col]
+                    trainX_vaep, trainY_vdep[col], random_state=args.seed, stratify=trainY_vdep[col]
                 )
                 model.fit(
                     trainX_vaep,
-                    Y[col],
+                    trainY_vdep[col],
                     eval_set=[(split_X, split_Y), (split_X_eval, split_Y_eval)],
                     verbose=True,
                 )
             else:
-                model.fit(trainX_vaep, Y[col])
+                model.fit(trainX_vaep, trainY_vdep[col])
                 # setting directories
                 feature_importances = figuredir + "/feature_importances"
                 os.makedirs(feature_importances, exist_ok=True)
@@ -410,26 +288,26 @@ else:
         elif col == "gains" or col == "effective_attack":
             if args.split_train_eval:
                 split_X, split_X_eval, split_Y, split_Y_eval = train_test_split(
-                    X, Y[col], random_state=args.seed, stratify=Y[col]
+                    trainX_vdep, trainY_vdep[col], random_state=args.seed, stratify=trainY_vdep[col]
                 )
                 model.fit(
-                    X,
-                    Y[col],
+                    trainX_vdep,
+                    trainY_vdep[col],
                     eval_set=[(split_X, split_Y), (split_X_eval, split_Y_eval)],
                     verbose=True,
                 )
             else:
-                model.fit(X, Y[col])
+                model.fit(trainX_vdep, trainY_vdep[col])
                 # setting directories
                 feature_importances = figuredir + "/feature_importances"
                 os.makedirs(feature_importances, exist_ok=True)
                 explainer = shap.TreeExplainer(model)
-                shap_values = explainer.shap_values(X)
+                shap_values = explainer.shap_values(trainX_vdep)
                 # shap_summary
                 shap.summary_plot(
                     shap_values=shap_values,
-                    features=X,
-                    feature_names=X.columns,
+                    features=trainX_vdep,
+                    feature_names=trainX_vdep.columns,
                     show=False,
                 )
                 plt.savefig(os.path.join(feature_importances, f"model_{col}_summary.png"))
@@ -491,7 +369,7 @@ else:
         df[Y_hat.columns].to_hdf(predictions_h5, f"game_{int(k)}")
 
     # constants for VDEP
-    C_vdep_v0 = Y["gains"].sum() / Y["effective_attack"].sum()
+    C_vdep_v0 = trainY_vdep["gains"].sum() / trainY_vdep["effective_attack"].sum()
     # gain_concedes = sum((Y['gains']==True) & (Y['concedes']==True))/len(Y['gains'])
     # attacked_scores = sum((Y['effective_attack']==True) & (Y['scores']==True))/len(Y['gains'])
     # C_vdep_v1 = attacked_scores/gain_concedes

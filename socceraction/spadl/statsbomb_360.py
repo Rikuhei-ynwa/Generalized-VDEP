@@ -13,6 +13,13 @@ _free_open_data: str = (
     "https://raw.githubusercontent.com/statsbomb/open-data/master/data/"
 )
 
+MIN2SEC: int = 60
+HALF2SEC: int = 45 * MIN2SEC
+
+MIN_DRIBBLE_LENGTH: float = 3.0
+MAX_DRIBBLE_LENGTH: float = 60.0
+MAX_DRIBBLE_DURATION: float = 10.0
+
 
 def _remoteloadjson(path: str) -> List[Dict]:
     return requests.get(path).json()
@@ -147,193 +154,212 @@ def extract_player_games(events: pd.DataFrame) -> pd.DataFrame:
     return pg
 
 
-def convert_to_actions_360(events: pd.DataFrame, home_team_id: int) -> pd.DataFrame:
+def transform_coordinates(loc: np.array, dim: str):
+    CELL_RELATIVE_CENTER = 0.5
+    loc = loc - CELL_RELATIVE_CENTER
+    if dim == "x":
+        return (
+            (loc / spadlconfig.field_length_statsbomb) * spadlconfig.field_length
+            )
+    elif dim == "y":
+        return (
+            ((spadlconfig.field_width_statsbomb - loc) / spadlconfig.field_width_statsbomb)
+              * spadlconfig.field_width
+        )
+
+
+def euclidean_distance(point1, point2) -> float:
+    return np.sqrt(np.sum((point1 - point2) ** 2))
+
+
+def _check_coordinates(loc_pl, loc_ball, type_name):
     """
-    Convert StatsBomb events to SPADL actions + 360
+    The coordinates of players in StatsBomb are team_name attacking 
+    from left to right. However, sometimes, this is not the case due to 
+    errors in data acquisition. Fortunately, the coordinates of the ball 
+    are the same as if team_name were attacking from left to right, 
+    so the ones of the players are corrected based on this.
+    Also, the coordinates should not be modified when type_name is 'Dribble'.
 
     Parameters
-    events: pd.DataFrame, StatsBomb's format.
-    home_team_id: int,
-    ---
+    ----------
+    loc_pl: np.ndarray, shape=(22, 2)
+    loc_ball: np.ndarray, shape=(2,)
+    type_name: str
+    
     Returns
+    -------
+    need_correction: float
+    if need_correction == 0, no correction is needed.
+    if need_correction == 0.5, in other words the event was 'Dribble', 
+    the correction about players' coordinates is needed.
+    if need_correction == 1, the correction is needed.
     """
-    actions = pd.DataFrame()
 
-    events["extra"] = events["extra"].fillna({})
-    events = events.fillna(0)
-
-    actions["game_id"] = events.game_id  # match_id
-    actions["period_id"] = events.period_id  # period
-
-    actions["time_seconds"] = (
-        60 * events.minute - ((actions["period_id"] == 2) * 45 * 60) + events.second
-    )
-    actions["timestamp"] = events.timestamp
-    actions["team_id"] = events.team_id
-    actions["player_id"] = events.player_id
-
-    actions["start_x"] = events.location.apply(lambda x: x[0] if x else 1)
-    actions["start_y"] = events.location.apply(lambda x: x[1] if x else 1)
-    # The same as Socceraction
-    actions["start_x"] = ((actions["start_x"] - 1) / 119) * spadlconfig.field_length
-    actions["start_y"] = spadlconfig.field_width - ((actions["start_y"] - 1) / 79) * spadlconfig.field_width
-
-    end_location = events[["location", "extra"]].apply(_get_end_location, axis=1)
-    actions["end_x"] = end_location.apply(lambda x: x[0] if x else 1)
-    actions["end_y"] = end_location.apply(lambda x: x[1] if x else 1)
-    actions["end_x"] = ((actions["end_x"] - 1) / 119) * spadlconfig.field_length
-    actions["end_y"] = spadlconfig.field_width - ((actions["end_y"] - 1) / 79) * spadlconfig.field_width
-
-    actions["type_id"] = events[["type_name", "extra"]].apply(_get_type_id, axis=1)
-    actions["result_id"] = events[["type_name", "extra"]].apply(_get_result_id, axis=1)
-    actions["bodypart_id"] = events[["type_name", "extra"]].apply(
-        _get_bodypart_id, axis=1
-    )
-    # if you add new variable, please add it to _add_dribbles
-    actions["away_team"] = (events.team_id != home_team_id).astype(int)
-    # NaN is replaced with False
-    if actions["away_team"].isna().sum() > 0:
-        actions["away_team"] = actions["away_team"].replace(
-            np.nan, False
-        )  # .fillna(False, inplace=True) does not work
-
-    # 360 data
-    actions["visible_area_360"] = events["visible_area_360"]
-    locations = pd.DataFrame({"freeze_frame_360": [[] for _ in range(len(events))]})
-    for ev in range(len(events)):
-        location = _get_freeze_frame_360(
-            events.loc[ev, ["freeze_frame_360", "type_name"]]
-        )
-        location = location.reshape((22, 2))
-        if np.sum(np.isnan(location)) > 0:
-            nonnanindex = np.where(~np.isnan(location[:, 0]))
-            location[nonnanindex, 0] = (
-                (location[nonnanindex, 0] - 1) / 119
-            ) * spadlconfig.field_length
-            location[nonnanindex, 1] = (
-                spadlconfig.field_width - ((location[nonnanindex, 1] - 1) / 79) * spadlconfig.field_width
-            )
-            location_copy = location.copy()
-            ball_location = np.array(
-                [actions.loc[ev, "start_x"], actions.loc[ev, "start_y"]]
-            )
-
-            # attackers
-            nonnan_atk = np.where(~np.isnan(location[:11, 0]))
-            nan_atk = np.where(np.isnan(location[:11, 0]))
-            ball2_atk = location[nonnan_atk] - np.repeat(
-                ball_location[:, np.newaxis].T, len(nonnan_atk[0]), axis=0
-            )
-            dist2_atk = np.sum((ball2_atk) ** 2, axis=1)
-            atk_nearest = np.concatenate([np.argsort(dist2_atk), nan_atk[0]])
-            location[:11] = location_copy[atk_nearest]
-
-            # defenders
-            nonnan_dfd = np.where(~np.isnan(location[11:-1, 0]))  # goalkeeper first
-            nan_dfd = np.where(np.isnan(location[11:-1, 0]))
-            ball2_dfd = location[11 + nonnan_dfd[0]] - np.repeat(
-                ball_location[:, np.newaxis].T, len(nonnan_dfd[0]), axis=0
-            )
-            dist2_dfd = np.sum((ball2_dfd) ** 2, axis=1)
-            dfd_nearest = np.concatenate([11 + np.argsort(dist2_dfd), 11 + nan_dfd[0]])
-            location[12:] = location_copy[dfd_nearest]
-            location[11] = location_copy[-1]  # goalkeeper
-        locations.iat[ev, 0] = location.reshape((44,)).tolist()
-
-        # visible_area_360
-        if actions.at[ev, "visible_area_360"] == []:
-            actions.at[ev, "visible_area_360"] = 0
-
-    actions["freeze_frame_360"] = locations
-
-    # end of 360 data processing
-    actions = (
-        actions[actions.type_id != spadlconfig.actiontypes.index("non_action")]
-        .sort_values(["game_id", "period_id", "time_seconds", "timestamp"])
-        .reset_index(drop=True)
-    )
-    actions = _fix_direction_of_play(actions)
-    actions = _fix_clearances(actions)
-
-    actions["action_id"] = range(len(actions))
-    actions = _add_dribbles(actions)
-
-    for col in actions.columns:
-        if "_id" in col:
-            actions[col] = actions[col].astype(int)
-        elif "away_team" in col:
-            actions[col] = actions[col].astype(int)
-
-    """for ev in range(len(actions)):
-        if np.sum(np.isnan(actions.loc[ev,"freeze_frame_360"]))>0:
-            import pdb; pdb.set_trace()
-            error('freeze_frame_360 includes nan')"""
-
-    return actions
+    THRESHOLD = 3.0
+    dist = [
+        euclidean_distance(loc_ball, cie_pl) for cie_pl in loc_pl
+        ]
+    if type_name == 'Dribble':
+        return 0.5
+    elif min(dist) <= THRESHOLD:
+        return 0
+    else:
+        return 1
 
 
-Location = Tuple[float, float]
+def _modify_coordinates(loc_pl, need_correction):
+    """
+    Parameters
+    ----------
+    loc_pl: np.ndarray, shape=(22, 2)
+    need_correction: float, 0, 0.5 or 1
+
+    Returns
+    -------
+    loc_pl: np.ndarray, shape=(22, 2)
+    """
+    if need_correction == 0:
+        return loc_pl
+    elif need_correction == 0.5 or need_correction == 1:
+        loc_pl[:,0] = spadlconfig.field_length - loc_pl[:,0]
+        loc_pl[:,1] = spadlconfig.field_width - loc_pl[:,1]
+
+    return loc_pl
+
+
+def _modify_polygon(visible_area, need_correction):
+    """
+    Parameters
+    ----------
+    visible_area: np.ndarray, shape=(n, 2)
+    need_correction: float, 0, 0.5 or 1
+
+    Returns
+    -------
+    visible_area: np.ndarray, shape=(n, 2)
+    """
+    if need_correction == 0 or need_correction == 0.5:
+        return visible_area
+    elif need_correction == 1:
+        visible_area[:,0] = spadlconfig.field_length - visible_area[:,0]
+        visible_area[:,1] = spadlconfig.field_width - visible_area[:,1]
+
+    return visible_area
+
+
+def _arrange_players(loc_pl, loc_ball):
+    """
+    Parameters
+    ----------
+    loc_pl: np.ndarray, shape=(22, 2)
+    loc_ball: np.ndarray, shape=(2,)
+    team_type: str, 'attack' or 'defend'
+
+    Returns
+    -------
+    loc_pl: np.ndarray, shape=(22, 2)    
+    """
+    nans = np.where(np.isnan(loc_pl).any(axis=1))[0]
+    nonnans = np.where(~np.isnan(loc_pl).any(axis=1))[0]
+    dist = [
+        euclidean_distance(loc_ball, cie_pl) for cie_pl in loc_pl[nonnans]
+        ]
+    idx_nearest = np.concatenate([np.argsort(dist), nans])
+
+    return loc_pl[idx_nearest]
 
 
 def _get_freeze_frame_360(q):
-    freeze_frame_360, type_name = q
-    locations = np.zeros(
-        (44,)
-    )  # attacking players, attacking goalkeeper, defensive players, defensive goal keeper
-    locations[:] = np.nan
-    for event in [
-        "Pass",
-        "Dribble",
-        "Carry",
-        "Foul Committed",
-        "Duel",
-        "Interception",
-        "Shot",
-        "Own Goal Against",
-        "Miscontrol",
-    ]:
-        if type(freeze_frame_360) == int or freeze_frame_360[0]["teammate"] is None:
-            return locations
-        elif "location" in freeze_frame_360[0]:  # event in type_name and
-            atk = 0
-            dfd = 0
-            if event in ["Foul Committed", "Duel", "Miscontrol"]:
-                pdb.set_trace()
-            elif event in ["Pass", "Dribble", "Carry", "Duel", "Shot"]:
-                for pl in range(len(freeze_frame_360)):
-                    if freeze_frame_360[pl]["teammate"]:
-                        if freeze_frame_360[pl]["keeper"]:
-                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl]["location"]
-                        else:
-                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl]["location"]
-                            atk += 1
-                    else:
-                        if freeze_frame_360[pl]["keeper"]:
-                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl]["location"]
-                        else:
-                            locations[(dfd + 11) * 2 : (dfd + 12) * 2] = freeze_frame_360[pl]["location"]
-                            dfd += 1
+    """
+    Parameters
+    q: Tuple[freeze_frame_360, type_name, extra]
 
-            elif event in ["Interception", "Own Goal Against"]:
-                for pl in range(len(freeze_frame_360)):
-                    if freeze_frame_360[pl]["teammate"]:
-                        if freeze_frame_360[pl]["keeper"]:
-                            locations[(21) * 2 : (22) * 2] = freeze_frame_360[pl]["location"]
-                        else:
-                            locations[(dfd + 11) * 2 : (dfd + 12) * 2] = freeze_frame_360[pl]["location"]
-                            dfd += 1
-                    else:
-                        if freeze_frame_360[pl]["keeper"]:
-                            locations[(10) * 2 : (11) * 2] = freeze_frame_360[pl]["location"]
-                        else:
-                            locations[(atk) * 2 : (atk + 1) * 2] = freeze_frame_360[pl]["location"]
-                            atk += 1
+    Returns
+    locations: np.ndarray
+    """
+    freeze_frame_360, type_name, extra = q
+    locations = np.zeros((44,))
+    locations[:] = np.nan
+    if type(freeze_frame_360) == int or freeze_frame_360[0]["teammate"] is None:
+        return locations
+    elif "location" in freeze_frame_360[0]:
+        """
+        0 ~ 9: attacking players
+        10: attacking goalkeeper
+        11 ~ 20: defending players
+        21: defending goalkeeper
+        """
+        ATK = 0
+        ATK_GK = 10
+        DFD = 11
+        DFD_GK = 21
+        DIMENTION = 2
+        if type_name == 'Foul Committed':
             return locations
+        elif type_name in [
+            'Carry','Dribble','Miscontrol','Pass','Shot',
+            ]:
+            for pl in range(len(freeze_frame_360)):
+                if freeze_frame_360[pl]["teammate"]:
+                    if freeze_frame_360[pl]["keeper"]:
+                        locations[
+                            ATK_GK*DIMENTION : (ATK_GK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                    else:
+                        locations[
+                            ATK*DIMENTION : (ATK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                        ATK += 1
+                else:
+                    if freeze_frame_360[pl]["keeper"]:
+                        locations[
+                            DFD_GK*DIMENTION : (DFD_GK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                    else:
+                        locations[
+                            DFD*DIMENTION : (DFD+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                        DFD += 1
+
+        elif (
+            type_name in [
+            'Clearance','Goal Keeper','Interception','Own Goal Against',
+            ] or 
+            (type_name == 'Duel' 
+                and 
+                extra.get("duel", {}).get("type", {}).get("name") == "Tackle")
+            ):
+            for pl in range(len(freeze_frame_360)):
+                import pdb; pdb.set_trace()
+                if freeze_frame_360[pl]["teammate"]:
+                    if freeze_frame_360[pl]["keeper"]:
+                        locations[
+                            DFD_GK*DIMENTION : (DFD_GK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                    else:
+                        locations[
+                            DFD*DIMENTION : (DFD+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                        DFD += 1
+                else:
+                    if freeze_frame_360[pl]["keeper"]:
+                        locations[
+                            ATK_GK*DIMENTION : (ATK_GK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                    else:
+                        locations[
+                            ATK*DIMENTION : (ATK+1)*DIMENTION
+                            ] = freeze_frame_360[pl]["location"]
+                        ATK += 1
+
+        return locations
     pdb.set_trace()
     return freeze_frame_360
 
 
-def _get_end_location(q: Tuple[Location, dict]) -> Location:
+# Location = Tuple[float, float]
+def _get_end_location(q: Tuple[list, str, dict]) -> list:
     start_location, extra = q
     for event in ["pass", "shot", "carry"]:
         if event in extra and "end_location" in extra[event]:
@@ -533,11 +559,6 @@ def _fix_direction_of_play(actions: pd.DataFrame) -> pd.DataFrame:
     return actions
 
 
-min_dribble_length: float = 3.0
-max_dribble_length: float = 60.0
-max_dribble_duration: float = 10.0
-
-
 def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
     next_actions = actions.shift(-1)
 
@@ -546,11 +567,11 @@ def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
 
     dx = actions.end_x - next_actions.start_x
     dy = actions.end_y - next_actions.start_y
-    far_enough = dx**2 + dy**2 >= min_dribble_length**2
-    not_too_far = dx**2 + dy**2 <= max_dribble_length**2
+    far_enough = dx**2 + dy**2 >= MIN_DRIBBLE_LENGTH**2
+    not_too_far = dx**2 + dy**2 <= MAX_DRIBBLE_LENGTH**2
 
     dt = next_actions.time_seconds - actions.time_seconds
-    same_phase = dt < max_dribble_duration
+    same_phase = dt < MAX_DRIBBLE_DURATION
 
     dribble_idx = same_team & far_enough & not_too_far & same_phase
 
@@ -561,7 +582,6 @@ def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
     dribbles["period_id"] = nex.period_id
     dribbles["action_id"] = prev.action_id + 0.1
     dribbles["time_seconds"] = (prev.time_seconds + nex.time_seconds) / 2
-    dribbles["timestamp"] = nex.timestamp
     dribbles["team_id"] = nex.team_id
     dribbles["player_id"] = nex.player_id
     dribbles["start_x"] = prev.end_x
@@ -582,3 +602,215 @@ def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
     )
     actions["action_id"] = range(len(actions))
     return actions
+
+
+def convert_to_actions_360(events: pd.DataFrame, home_team_id: int) -> pd.DataFrame:
+    """
+    Convert StatsBomb events to SPADL actions + 360
+
+    Parameters
+    ----------
+    events: pd.DataFrame, StatsBomb's format.
+    home_team_id: int,
+    
+    Returns
+    -------
+    actions: pd.DataFrame, SPADL's format.
+    """
+
+    actions = pd.DataFrame()
+
+    events["extra"] = events["extra"].fillna({})
+    events = events.fillna(0)
+
+    # if events.at[0, "game_id"] == 3788741:
+
+    #     from matplotlib import pyplot as plt
+    #     from matplotlib.animation import FuncAnimation
+    #     from mplsoccer import Pitch
+    #     pitch = Pitch(pitch_type='statsbomb', pitch_length=120, pitch_width=80)
+    #     fig, ax = pitch.draw(figsize=(16, 9))
+
+    #     def anim_statsbomb(idx):
+    #         ax.cla()
+    #         pitch.draw(ax=ax)
+    #         if events.iloc[idx+1000].visible_area_360 == 0:
+    #             pass
+    #         else:
+    #             visible_area = np.array(events.iloc[idx+1000].visible_area_360).reshape(-1, 2)
+    #             pitch.polygon([visible_area], color=(1, 0, 0, 0.3), ax=ax)
+
+    #             player_position_data = events.iloc[idx+1000].freeze_frame_360
+
+    #             pitch.scatter(
+    #                 events.iloc[idx+1000].location[0], events.iloc[idx+1000].location[1], c='white', s=240, ec='k', ax=ax
+    #             )
+
+    #             for player in player_position_data:
+    #                 if player["teammate"]:
+    #                     pitch.scatter(player["location"][0], player["location"][1], c='orange', s=80, ec='k', ax=ax)
+    #                 else:
+    #                     pitch.scatter(player["location"][0], player["location"][1], c='dodgerblue', s=80, ec='k', ax=ax)
+
+    #         type_name = events.iloc[idx+1000].type_name
+    #         if type_name == 'Duel':
+    #             type_name = events.iloc[idx+1000].extra['duel']['type']['name']
+            
+    #         ax.text(
+    #             1.0, 1.5, 
+    #             f"Frame: {idx+1000}, Team: {events.iloc[idx+1000].team_name}, Type: {type_name} Player: {events.iloc[idx+1000].player_name}", 
+    #             fontsize=12
+    #             )
+
+    #     anim = FuncAnimation(fig, anim_statsbomb, frames=1000, interval=200)
+    #     os.makedirs("/home/r_umemoto/workspace5/work/Generalized-VDEP/anims", exist_ok=True)
+    #     anim.save("/home/r_umemoto/workspace5/work/Generalized-VDEP/anims" + "/sample.mp4", writer="ffmpeg")
+
+    #     import pdb; pdb.set_trace()
+
+    actions["game_id"] = events.game_id  # match_id
+    actions["period_id"] = events.period_id  # period
+
+    actions["time_seconds"] = events.minute * MIN2SEC + events.second
+    actions["idx_original"] = events.index
+    actions["team_id"] = events.team_id
+    actions["player_id"] = events.player_id
+
+    actions["start_x"] = events.location.apply(lambda x: x[0] if x else -10)
+    actions["start_y"] = events.location.apply(lambda x: x[1] if x else -10)
+    actions["start_x"] = transform_coordinates(actions["start_x"].to_numpy(), "x")
+    actions["start_y"] = transform_coordinates(actions["start_y"].to_numpy(), "y")
+
+    end_location = events[["location", "extra"]].apply(_get_end_location, axis=1)
+    actions["end_x"] = end_location.apply(lambda x: x[0] if x else -10)
+    actions["end_y"] = end_location.apply(lambda x: x[1] if x else -10)
+    actions["end_x"] = transform_coordinates(actions["end_x"].to_numpy(), "x")
+    actions["end_y"] = transform_coordinates(actions["end_y"].to_numpy(), "y")
+
+    actions["type_id"] = events[["type_name", "extra"]].apply(_get_type_id, axis=1)
+    actions["result_id"] = events[["type_name", "extra"]].apply(_get_result_id, axis=1)
+    actions["bodypart_id"] = events[["type_name", "extra"]].apply(_get_bodypart_id, axis=1)
+    actions["away_team"] = (events.team_id != home_team_id).astype(int)
+    if actions["away_team"].isna().sum() > 0:
+        actions["away_team"] = actions["away_team"].replace(np.nan, False)
+
+    # 360 data
+    locations = pd.DataFrame(
+        {"freeze_frame_360": [[] for _ in range(len(events))]}
+        )
+    visible_areas = pd.DataFrame(
+        {"visible_area_360": [[] for _ in range(len(events))]}
+    )
+    for ev in range(len(events)):
+        # freeze_frame_360
+        location = _get_freeze_frame_360(
+            events.loc[ev, ["freeze_frame_360", "type_name", "extra"]]
+        )
+        cie_ball = np.array(
+                [actions.loc[ev, "start_x"], actions.loc[ev, "start_y"]]
+            )
+        type_name = events.loc[ev, "type_name"]
+        if np.sum(~np.isnan(location)) > 0:
+            location = location.reshape((22, 2))
+            location[:,0] = transform_coordinates(location[:,0], "x")
+            location[:,1] = transform_coordinates(location[:,1], "y")
+            need_correction = _check_coordinates(location, cie_ball, type_name)
+            location = _modify_coordinates(location, need_correction)
+
+            """
+            Arrange players in order of distance to the ball.
+            """
+            location_copy = location.copy()
+            cie_atks = _arrange_players(location_copy[:11], cie_ball)
+            cie_dfds = _arrange_players(location_copy[11:], cie_ball)
+            location = np.concatenate([cie_atks, cie_dfds])
+
+            # visible_area_360
+            if events.at[ev, "visible_area_360"] == 0:
+                pass
+            else:
+                visible_area = events.at[ev, "visible_area_360"]
+                visible_area = np.array(visible_area).reshape((-1, 2))
+                visible_area[:,0] = transform_coordinates(visible_area[:,0], "x")
+                visible_area[:,1] = transform_coordinates(visible_area[:,1], "y")
+                visible_area = _modify_polygon(visible_area, need_correction)
+                visible_areas.iat[ev, 0] = visible_area.flatten().tolist()
+
+        locations.iat[ev, 0] = location.reshape((44,)).tolist()
+
+    actions["freeze_frame_360"] = locations
+    actions["visible_area_360"] = visible_areas
+
+    actions = (
+        actions[actions.type_id != spadlconfig.actiontypes.index("non_action")]
+        .sort_values(["idx_original"])
+        .reset_index(drop=True)
+    )
+    actions = actions.drop(["idx_original"], axis=1)
+    actions = _fix_direction_of_play(actions)
+    actions = _fix_clearances(actions)
+
+    actions["action_id"] = range(len(actions))
+    actions = _add_dribbles(actions)
+
+    for col in actions.columns:
+        if "_id" in col:
+            actions[col] = actions[col].astype(int)
+        elif "away_team" in col:
+            actions[col] = actions[col].astype(int)
+
+    """for ev in range(len(actions)):
+        if np.sum(np.isnan(actions.loc[ev,"freeze_frame_360"]))>0:
+            import pdb; pdb.set_trace()
+            error('freeze_frame_360 includes nan')"""
+    
+    if events.at[0, "game_id"] == 3794688:
+        
+        from matplotlib.animation import FuncAnimation
+        from mplsoccer import Pitch
+        pitch = Pitch(pitch_type='custom', pitch_length=105, pitch_width=68)
+        fig, ax = pitch.draw(figsize=(16, 9))
+
+        # animation
+        def update(frame):
+            ax.cla()
+            pitch.draw(ax=ax)
+
+            # the visible area
+            visible_area = np.array(actions.iloc[frame+1500].visible_area_360).reshape(-1, 2)
+            pitch.polygon([visible_area], color=(1, 0, 0, 0.3), ax=ax)
+
+            # the ball's location
+            cie_ball = np.array([actions.iloc[frame+1500].start_x, actions.iloc[frame+1500].start_y])
+            pitch.scatter(
+                cie_ball[0], cie_ball[1], c='white', s=240, ec='k', ax=ax
+            )
+
+            # the players' location
+            cie_pl = np.array(actions.loc[frame+1500, "freeze_frame_360"]).reshape((22, 2))
+            cie_atk = cie_pl[:11,:]
+            cie_dfd = cie_pl[11:,:]
+
+            # the players' location
+            cie_pl = np.array(actions.loc[frame+1500, "freeze_frame_360"]).reshape((22, 2))
+            cie_atk = cie_pl[:11]
+            cie_dfd = cie_pl[11:]
+            pitch.scatter(
+                cie_atk[:, 0], cie_atk[:, 1], c='orange', s=80, ec='k', ax=ax
+                )
+            pitch.scatter(
+                cie_dfd[:, 0], cie_dfd[:, 1], c='dodgerblue', s=80, ec='k', ax=ax
+                )
+            
+            ax.text(
+                1.0, 1.5, f"Frame: {frame+1500}, Type: {actions.iloc[frame+1500].type_id}, Player: {actions.iloc[frame+1500].player_id}", fontsize=12
+                )
+
+        anim = FuncAnimation(fig, update, frames=500, interval=200)
+        os.makedirs("/home/r_umemoto/workspace5/work/Generalized-VDEP/anims", exist_ok=True)
+        anim.save("/home/r_umemoto/workspace5/work/Generalized-VDEP/anims" + "/converted_sample.mp4", writer="ffmpeg")
+
+        import pdb; pdb.set_trace()
+
+    return actions
+

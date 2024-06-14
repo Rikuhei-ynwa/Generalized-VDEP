@@ -3,9 +3,9 @@
 
 Attributes
 ----------
-field_length : float
+FIELD_LENGTH : float
     The length of a pitch (in meters).
-field_width : float
+FIELD_WIDTH : float
     The width of a pitch (in meters).
 bodyparts : list(str)
     The bodyparts used in the SPADL language.
@@ -19,10 +19,18 @@ from typing import List
 
 import pandas as pd  # type: ignore
 
-field_length: float = 105.0  # unit: meters
-field_width: float = 68.0  # unit: meters
+FIELD_LENGTH_STATSBOMB: float = 120.0
+FIELD_WIDTH_STATSBOMB: float = 80.0
 
-bodyparts: List[str] = ['foot', 'head', 'other', 'head/other']
+FIELD_LENGTH: float = 105.0  # unit: meters
+FIELD_WIDTH: float = 68.0  # unit: meters
+
+ON_PENALTY_PERIOD_ID: int = 5
+
+bodyparts: List[str] = [
+    'foot', 'foot_right', 'foot_left', 'head', 'other', 'head/other'
+    ]
+
 results: List[str] = [
     'fail',
     'success',
@@ -31,6 +39,7 @@ results: List[str] = [
     'yellow_card',
     'red_card',
 ]
+
 actiontypes: List[str] = [
     'pass',
     'cross',
@@ -40,7 +49,8 @@ actiontypes: List[str] = [
     'corner_crossed',
     'corner_short',
     'take_on',
-    'foul',
+    'offensive_foul',
+    'defensive_foul',
     'tackle',
     'interception',
     'shot',

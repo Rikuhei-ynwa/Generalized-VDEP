@@ -2,10 +2,11 @@
 """Implements serializers for the event data of various providers."""
 
 __all__ = [
-    'opta',
+    # 'opta',
     'statsbomb',
-    'wyscout',
-    'rdd',
+    # 'wyscout',
+    # 'rdd',
 ]
 
-from . import opta, rdd, statsbomb, wyscout
+# from . import opta, rdd, statsbomb, wyscout
+from . import statsbomb

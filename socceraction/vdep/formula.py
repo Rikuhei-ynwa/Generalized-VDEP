@@ -35,7 +35,7 @@ def gain_value(
     return gains - prev_gains
 
 
-def effective_attack_value(
+def effective_attacked_value(
     actions: pd.DataFrame,
     effective_attack: pd.Series,
 ) -> pd.Series:
@@ -119,60 +119,75 @@ def value(
     actions: pd.DataFrame,
     features: pd.DataFrame,
     preds: pd.DataFrame,
-    drops: list,
     C_vdep_v0=3.9,
 ) -> pd.DataFrame:
     # insert np.nan into the index where all elements in freeze_frame_360 are NaNs.
     preds = preds.values
-    for index in drops:
-        preds = np.insert(preds, index, np.nan, axis=0)
     preds = pd.DataFrame(
-        data=preds, columns=["scores", "concedes", "gains", "effective_attack"]
+        data=preds,
+        columns=["scores", "concedes", "gains", "effective_attack"]
     )
 
-    # which team is attacking or defending?
+    # Create the column "defense_team" because we want to evaluate the defense team.
     teams = actions["team_name"].unique()
     attack_team = actions["team_name"].values.tolist()
     defense_team = actions["team_name"].values.tolist()
+    dfd_type_names = [
+        'tackle',
+        'interception',
+        'keeper_save',
+        'keeper_claim',
+        'keeper_punch',
+        'keeper_pick_up',
+        ]
     for i, team in enumerate(actions["team_name"]):
+        type_name = actions.at[actions.index[i], "type_name"]
+        team_bf = (
+            actions.at[actions.index[i - 1], "team_name"] 
+            if i > 0 and i < len(actions) - 1 
+            else ""
+            )
+        result_name = actions.at[actions.index[i], "result_name"]
         if (
-            (
-                actions.at[actions.index[i], "type_name"]
-                in [
-                    "interception",
-                    "tackle",
-                    "clearance",
-                    "keeper_punch",
-                    "keeper_claim",
-                    "keeper_save",
-                ]
-            )
-            or (  # which side commit foul?
-                (0 < i < len(actions) - 1)
-                & (actions.at[actions.index[i], "type_name"] == "foul")
-                & (actions.at[actions.index[i - 1], "team_name"] != team)
-            )
-            or (actions.at[actions.index[i], "result_name"] == "owngoal")
+            (type_name in dfd_type_names)
+            or (type_name == "foul" and team_bf != team)
+            or (result_name == "owngoal")
         ):
             attack_team[i] = teams[teams != team][0]
         else:
             defense_team[i] = teams[teams != team][0]
 
     v = pd.DataFrame()
-    v["offensive_value"] = offensive_value(actions, preds.scores, preds.concedes)
-    v["defensive_value"] = defensive_value(actions, preds.scores, preds.concedes)
-    v["vaep_value"] = v["offensive_value"] + v["defensive_value"]
+    v["offensive_value"] = offensive_value(
+        actions, preds.scores, preds.concedes
+        )
+    v["defensive_value"] = defensive_value(
+        actions, preds.scores, preds.concedes
+        )
+    v["vaep_value"] = (
+        v["offensive_value"] + v["defensive_value"]
+        )
     d = pd.DataFrame()
-    d["vdep_value"] = preds.gains - C_vdep_v0 * preds.effective_attack
-    d["gain_value"] = gain_value(actions, preds.gains)
-    d["attacked_value"] = effective_attack_value(actions, preds.effective_attack)
+    d["vdep_value"] = (
+        preds.gains - C_vdep_v0 * preds.effective_attack
+        )
+    d["gain_value"] = gain_value(
+        actions, preds.gains
+        )
+    d["attacked_value"] = effective_attacked_value(
+        actions, preds.effective_attack
+        )
     ids = pd.DataFrame()
     ids["attack_team"] = pd.Series(attack_team)
     ids["defense_team"] = pd.Series(defense_team)
     # ids["gains_id"] = features["regain_a0"] | features["result_offside_a0"]
     ids["gains_id"] = features["regain_a0"]
-    ids["effective_id"] = features["penetration_a0"] | (
-        (actions["type_name"].str.contains("shot")) & (actions["period_id"] < 5)
-    )
+    ids["effective_id"] = (
+        features["penetration_a0"]
+        | (
+            (actions["type_name"].str.contains("shot"))
+            & (actions["period_id"] < 5)
+            )
+            )
 
     return v, d, ids

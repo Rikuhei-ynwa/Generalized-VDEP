@@ -10,6 +10,11 @@ import pandas as pd  # type: ignore
 from . import config as spadlconfig
 
 
+min_dribble_length: float = 3.0
+max_dribble_length: float = 60.0
+max_dribble_duration: float = 10.0
+
+
 def _fix_clearances(actions: pd.DataFrame) -> pd.DataFrame:
     next_actions = actions.shift(-1)
     next_actions[-1:] = actions[-1:]
@@ -18,21 +23,6 @@ def _fix_clearances(actions: pd.DataFrame) -> pd.DataFrame:
     actions.loc[clearance_idx, 'end_y'] = next_actions[clearance_idx].start_y.values
 
     return actions
-
-
-def _fix_direction_of_play(actions: pd.DataFrame, home_team_id: int) -> pd.DataFrame:
-    away_idx = (actions.team_id != home_team_id).values
-    for col in ['start_x', 'end_x']:
-        actions.loc[away_idx, col] = spadlconfig.field_length - actions[away_idx][col].values
-    for col in ['start_y', 'end_y']:
-        actions.loc[away_idx, col] = spadlconfig.field_width - actions[away_idx][col].values
-
-    return actions
-
-
-min_dribble_length: float = 3.0
-max_dribble_length: float = 60.0
-max_dribble_duration: float = 10.0
 
 
 def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
@@ -70,8 +60,11 @@ def _add_dribbles(actions: pd.DataFrame) -> pd.DataFrame:
     dribbles['bodypart_id'] = spadlconfig.bodyparts.index('foot')
     dribbles['type_id'] = spadlconfig.actiontypes.index('dribble')
     dribbles['result_id'] = spadlconfig.results.index('success')
+    dribbles['away_team'] = prev.away_team
+    dribbles['freeze_frame_360'] = prev.freeze_frame_360
+    dribbles['visible_area_360'] = prev.visible_area_360
 
     actions = pd.concat([actions, dribbles], ignore_index=True, sort=False)
-    actions = actions.sort_values(['game_id', 'period_id', 'action_id']).reset_index(drop=True)
+    actions = actions.sort_values(['game_id', 'period_id', 'time_seconds']).reset_index(drop=True)
     actions['action_id'] = range(len(actions))
     return actions
