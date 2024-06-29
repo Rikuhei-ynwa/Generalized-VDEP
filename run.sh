@@ -20,7 +20,9 @@ data360=(euro2020 euro2022)
 
 # training with uefa statsbomb data
 for info in ${data360[@]};do
+        # poetry run python main_evaluate.py --data statsbomb --game ${info} --n_nearest 11 --no_games -1 --date_opendata 20231002 --date_experiment ${date_experiment} --model xgboost --test --teamView England
         poetry run python main_evaluate.py --data statsbomb --game ${info} --n_nearest 11 --no_games -1 --date_opendata 20231002 --date_experiment ${date_experiment} --model xgboost --test --teamView England
+        poetry run python main_verify.py --data statsbomb --game ${info} --date_opendata 20231002 --date_experiment ${date_experiment} --model xgboost --k_fold 5
 done
 
 

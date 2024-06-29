@@ -184,10 +184,7 @@ def value(
     ids["gains_id"] = features["regain_a0"]
     ids["effective_id"] = (
         features["penetration_a0"]
-        | (
-            (actions["type_name"].str.contains("shot"))
-            & (actions["period_id"] < 5)
-            )
-            )
+        | actions["type_name"].str.contains("shot")
+        )
 
     return v, d, ids

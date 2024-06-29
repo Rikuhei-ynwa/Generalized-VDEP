@@ -22,7 +22,7 @@ def set_DLoader(args):
         data_folder = f"../open-data-{args.date_opendata}/data"  # Example of local folder with statsbomb data
         DLoader = StatsBombLoader(root=data_folder, getter="local")
     else:
-        raise ValueError("Please set the data to 'statsbomb'.")
+        raise ValueError("Please set the data to 'statsbomb' in this version.")
 
     return DLoader
 

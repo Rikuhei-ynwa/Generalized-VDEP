@@ -215,11 +215,9 @@ def convert_to_actions_360(
     actions['game_id'] = events.game_id
     actions['original_event_id'] = events.event_id
     actions['period_id'] = events.period_id
-    # Adjust the timestamp of the actions.
     actions['time_seconds'] = (
         events.minute * MIN2SEC + events.second
         )
-    actions = _adjust_time_seconds(actions)
     actions['team_id'] = events.team_id
     actions['player_id'] = events.player_id
     # split (end)location column into x and y columns
@@ -350,7 +348,9 @@ def convert_to_actions_360(
     actions["freeze_frame_360"] = locations
     actions["visible_area_360"] = visible_areas
 
-    not_non_actions = actions.type_id != spadlconfig.actiontypes.index('non_action')
+    not_non_actions = (
+        actions.type_id != spadlconfig.actiontypes.index('non_action')
+        )
     actions = (
         actions[not_non_actions]
         .sort_values(['game_id', 'period_id', 'time_seconds'], kind='mergesort')
@@ -439,34 +439,6 @@ def _infer_xy_fidelity_versions(
         2 if high_fidelity_shots else xy_fidelity_version
         )
     return shot_fidelity_version, xy_fidelity_version
-
-
-def _adjust_time_seconds(actions):
-    """Adjust the time seconds of the actions."""
-    offset = MIN2SEC * HALF_MIN
-    offset_extra = MIN2SEC * EXTRA_HALF_MIN
-    last_sec = actions[actions.period_id == 1].time_seconds.max()
-    idx_second_half = actions[actions.period_id == 2].index
-    actions.loc[idx_second_half, 'time_seconds'] = (
-        actions.loc[idx_second_half, 'time_seconds'] 
-        - offset + last_sec
-    )
-
-    if sum(actions['period_id'] == 3) > 0:
-        last_sec = actions[actions.period_id == 2].time_seconds.max()
-        idx_third_half = actions[actions.period_id == 3].index
-        actions.loc[idx_third_half, 'time_seconds'] = (
-            actions.loc[idx_third_half, 'time_seconds'] 
-            - 2 * offset + last_sec
-        )
-        last_sec = actions[actions.period_id == 3].time_seconds.max()
-        idx_fourth_half = actions[actions.period_id == 4].index
-        actions.loc[idx_fourth_half, 'time_seconds'] = (
-            actions.loc[idx_fourth_half, 'time_seconds'] 
-            - 2 * offset - offset_extra + last_sec
-        )
-
-    return actions
 
 
 def _convert_x_cie(

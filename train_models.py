@@ -1,8 +1,12 @@
+import os
+import pickle
 import tqdm
-import pandas as pd
 
+import numpy as np
+import pandas as pd
 import shap
 import xgboost
+from matplotlib import pyplot as plt
 from sklearn.metrics import brier_score_loss, confusion_matrix, f1_score, log_loss, roc_auc_score
 
 import socceraction.spadl.config as spadlconfig
@@ -80,24 +84,27 @@ def getXY(games, features_h5, labels_h5, Xcols, vaep=False):
     return X, Y
 
 
-def set_xcols(nb_prev_actions=1, use_polar=False):
+def set_xcols(
+    nb_prev_actions=1, 
+    use_location=False, 
+    use_polar=False
+    ):
     X_FNS = [
         fs.actiontype,
         fs.actiontype_onehot,
         fs.bodypart_onehot,
-        # fs.result,
-        # fs.result_onehot,
-        # fs.goalscore,
-        # fs.startlocation,
-        # fs.endlocation,
         fs.movement,
         fs.space_delta,
         fs.team,
         fs.time_delta,
-        fs.player_loc_dist,
     ]
+    if use_location:
+        X_FNS += [fs.startlocation, fs.endlocation]
     if use_polar:
         X_FNS += [fs.startpolar, fs.endpolar]
+
+    # Player features
+    X_FNS += [fs.player_loc_dist]
 
     return fs.feature_column_names(X_FNS, nb_prev_actions)
 
@@ -200,6 +207,121 @@ def illustrate_shap(model, trainX):
     )
 
 
+def train(args, trainX, trainY, do="evaluation"):
+    figuredir_features = (
+        args.figuredir
+        + f"{do}_feature_importances"
+        )
+    os.makedirs(figuredir_features, exist_ok=True)
+    print(
+        f"trainX: {list(trainX.columns)}\n"
+        + f"length: {len(trainX.columns)}\n"
+        + f"trainY: {list(trainY.columns)}"
+        )
+
+    # Train classifiers
+    models = {}
+    for col in list(trainY.columns):
+        print(
+            f"training {col} "
+            + f"positive: {trainY[col].sum()} "
+            + f"negative: {len(trainY[col]) - trainY[col].sum()}"
+            )
+        model = create_model(args)
+        model.fit(trainX, trainY[col])
+        illustrate_shap(model, trainX)
+        plt.savefig(
+            os.path.join(
+                figuredir_features, 
+                f"{args.model_str}_{col}_summary.png"
+                )
+            )
+        plt.clf()
+        plt.close()
+        models[col] = model
+
+    return models
+
+
+def inference_for_evaluation(models, testX, testY):
+    Y_hat = pd.DataFrame()
+    f1scores = np.empty(len(testY.columns))
+    for i, col in enumerate(testY.columns):
+        Y_hat[col] = [
+            probability[1] for probability in models[col].predict_proba(testX)
+            ]
+        print(
+            f"### Y: {col} ### "
+            + f"positive: {testY[col].sum()} "
+            + f"negative: {len(testY[col]) - testY[col].sum()}"
+            )
+        _, _, _, f1scores[i] = evaluate_metrics(
+            testY[col], Y_hat[col]
+            )
+
+    return Y_hat, f1scores
+
+
+def inference_for_verification(models, testX, testY):
+    Y_hat = pd.DataFrame()
+    briers = np.empty(len(testY.columns))
+    lls = np.empty(len(testY.columns))
+    roc_aucs = np.empty(len(testY.columns))
+    f1scores = np.empty(len(testY.columns))
+    for i, col in enumerate(testY.columns):
+        Y_hat[col] = [
+            probability[1] for probability in models[col].predict_proba(testX)
+            ]
+        print(
+            f"### Y: {col} ### "
+            + f"positive: {testY[col].sum()} "
+            + f"negative: {len(testY[col]) - testY[col].sum()}"
+            )
+        briers[i], lls[i], roc_aucs[i], f1scores[i] = evaluate_metrics(
+            testY[col], Y_hat[col]
+            )
+
+    return Y_hat, briers, lls, roc_aucs, f1scores
+
+
+def save_predictions(predictions_h5, A, Y_hat):
+    # concatenate action game id rows with predictions and save per game
+    grouped_predictions = pd.concat([A, Y_hat], axis=1).groupby("game_id")
+    for k, df in tqdm.tqdm(
+        grouped_predictions,
+        desc="Saving predictions per game"
+        ):
+        df = df.reset_index(drop=True)
+        df[Y_hat.columns].to_hdf(predictions_h5, f"game_{int(k)}")
+
+    
+def save_static_variables_for_evaluation(
+        args, datafolder, model_str, testY, f1scores
+        ):
+    C_vdep_v0 = testY["gains"].sum() / testY["effective_attack"].sum()
+    static = [args, C_vdep_v0, f1scores, ]
+    with open(
+        os.path.join(datafolder, "static_" + model_str + ".pkl"),
+        "wb") as f:
+        pickle.dump(static, f, protocol=4)
+
+
+def save_static_variables_for_verification(
+        args, briers, lls, roc_aucs, f1scores
+        ):
+    static = {
+        "args": args,
+        "briers": briers,
+        "lls": lls,
+        "roc_aucs": roc_aucs,
+        "f1scores": f1scores,
+    }
+    with open(
+        os.path.join(args.modelfolder, "static_" + args.model_str + ".pkl"),
+        "wb") as f:
+        pickle.dump(static, f, protocol=4)
+
+
 # Evaluate the model
 def evaluate_metrics(y: pd.Series, y_hat: pd.Series) -> float:
     """
@@ -213,17 +335,182 @@ def evaluate_metrics(y: pd.Series, y_hat: pd.Series) -> float:
     p = sum(y) / len(y)
     base = [p] * len(y)
     brier = brier_score_loss(y, y_hat)
-    print(f"  Brier score: {brier:.5f}, {(brier / brier_score_loss(y, base)):.5f}")
+    print(
+        f"  Brier score: {brier:.5f}, "
+          + f"{(brier / brier_score_loss(y, base)):.5f}"
+          )
     
     ll = log_loss(y, y_hat)
-    print(f"  log loss score: {ll:.5f}, {(ll / log_loss(y, base)):.5f}")
-    print(f"  ROC AUC: {roc_auc_score(y, y_hat):.5f}")
+    roc_auc = roc_auc_score(y, y_hat)
+    print(
+        f"  log loss score: {ll:.5f}, "
+        + f"{(ll / log_loss(y, base)):.5f}"
+        )
+    print(f"  ROC AUC: {roc_auc:.5f}")
 
     y_hat_bi = y_hat.round()
-    print(f"F1 score:{f1_score(y, y_hat_bi)}")
+    f1score = f1_score(y, y_hat_bi)
+    print(f" F1 score: {f1score}")
     print(confusion_matrix(y, y_hat_bi))
 
-    return f1_score(y, y_hat_bi)
+    return brier, ll, roc_auc, f1score
+
+
+def save_predictions_for_evaluation(
+        args, games, datafolder,
+        spadl_h5, features_h5, labels_h5, predictions_h5,
+        use_location=False, use_polar=False,
+        ):
+    if args.predict_actions:
+        datafolder += "/vaep_framework"
+        os.makedirs(datafolder, exist_ok=True)
+    
+    # note: only for the purpose of this example and due to the small dataset,
+    # we use the same data for training and evaluation
+    traingames, testgames, model_str = set_conditions(
+        args, games
+        )
+    args.model_str = model_str
+    print(
+        f"train/test of games: {len(traingames)}" 
+        + f"/{len(testgames)}"
+        )
+    
+    Xcols = set_xcols(
+        NB_PREV_ACTIONS, use_location=use_location, use_polar=use_polar,
+        )
+    Xcols_vdep, Xcols_vaep = choose_input_variables(args, Xcols)
+
+    # Train models
+    trainX_vaep, trainY_vaep = getXY(
+        traingames, features_h5, labels_h5, Xcols_vaep, vaep=True
+        )
+    trainX_vdep, trainY_vdep = getXY(
+        traingames, features_h5, labels_h5, Xcols_vdep, vaep=False
+        )
+    models_vaep = train(
+        args, trainX_vaep, trainY_vaep, do="evaluation"
+        )
+    models_vdep = train(
+        args, trainX_vdep, trainY_vdep, do="evaluation"
+        )
+    models = {**models_vaep, **models_vdep}
+    
+    with open(
+        os.path.join(datafolder, "VDEPmodel_" + model_str + ".pkl"),"wb"
+        ) as f:
+        pickle.dump(models, f, protocol=4)
+    print(
+        os.path.join(datafolder,"VDEPmodel_" + model_str + ".pkl") + " is saved."
+        )
+
+    # inference
+    testX_vaep, testY_vaep = getXY(
+        testgames, features_h5, labels_h5, Xcols_vaep, vaep=True
+        )
+    testX_vdep, testY_vdep = getXY(
+        testgames, features_h5, labels_h5, Xcols_vdep, vaep=False
+        )
+    Y_hat_vaep, f1scores_vaep = inference_for_evaluation(
+        models_vaep, testX_vaep, testY_vaep
+        )
+    Y_hat_vdep, f1scores_vdep = inference_for_evaluation(
+        models_vdep, testX_vdep, testY_vdep
+        )
+
+    testY = pd.concat([testY_vaep, testY_vdep], axis=1)
+    Y_hat = pd.concat([Y_hat_vaep, Y_hat_vdep], axis=1)
+    f1scores = np.concatenate([f1scores_vaep, f1scores_vdep])
+
+    # Save predictions
+    A = []
+    for game_id in tqdm.tqdm(games.game_id, "Loading game ids"):
+        Ai = pd.read_hdf(spadl_h5, f"actions/game_{game_id}")
+        Ai = Ai[Ai["period_id"] <= 4]
+        A.append(Ai[["game_id"]])
+    A = pd.concat(A).reset_index(drop=True)
+    save_predictions(predictions_h5, A, Y_hat)
+    save_static_variables_for_evaluation(
+        args, datafolder, model_str, testY, f1scores
+        )
+
+
+def save_prediction_for_verification(
+        args, games,
+        spadl_h5, features_h5, labels_h5, predictions_h5,
+        use_location=False, use_polar=False,
+        ):
+    train_set, test_set = args.sets
+    train_games = games.iloc[sorted(train_set)]
+    test_games = games.iloc[sorted(test_set)]
+    print(
+        "train/eval of games:", len(train_games), "/", len(test_games)
+        )
+    
+    Xcols = set_xcols(
+        NB_PREV_ACTIONS, use_location=use_location, use_polar=use_polar
+        )
+    Xcols_vdep, Xcols_vaep = choose_input_variables(args, Xcols)
+
+    # Train models
+    trainX_vaep, trainY_vaep = getXY(
+        train_games, features_h5, labels_h5, Xcols_vaep, vaep=True
+        )
+    trainX_vdep, trainY_vdep = getXY(
+        train_games, features_h5, labels_h5, Xcols_vdep, vaep=False
+        )
+    models_vaep = train(
+        args, trainX_vaep, trainY_vaep, do="verification"
+        )
+    models_vdep = train(
+        args, trainX_vdep, trainY_vdep, do="verification"
+        )
+    models = {**models_vaep, **models_vdep}
+
+    with open(
+        os.path.join(
+            args.modelfolder, "VDEPmodel_" + args.model_str + ".pkl"
+            ),"wb"
+        ) as f:
+        pickle.dump(models, f, protocol=4)
+    print(
+        os.path.join(
+            args.modelfolder, "VDEPmodel_" + args.model_str + ".pkl"
+            ) + " is saved."
+        )
+
+    # inference
+    testX_vaep, testY_vaep = getXY(
+        test_games, features_h5, labels_h5, Xcols_vaep, vaep=True
+        )
+    testX_vdep, testY_vdep = getXY(
+        test_games, features_h5, labels_h5, Xcols_vdep, vaep=False
+        )
+    Y_hat_vaep, briers_vaep, lls_vaep, roc_aucs_vaep, f1scores_vaep = (
+        inference_for_verification(models_vaep, testX_vaep, testY_vaep)
+        )
+    Y_hat_vdep, briers_vdep, lls_vdep, roc_aucs_vdep, f1scores_vdep = (
+        inference_for_verification(models_vdep, testX_vdep, testY_vdep)
+        )
+
+    testY = pd.concat([testY_vaep, testY_vdep], axis=1)
+    Y_hat = pd.concat([Y_hat_vaep, Y_hat_vdep], axis=1)
+    briers = np.concatenate([briers_vaep, briers_vdep])
+    lls = np.concatenate([lls_vaep, lls_vdep])
+    roc_aucs = np.concatenate([roc_aucs_vaep, roc_aucs_vdep])
+    f1scores = np.concatenate([f1scores_vaep, f1scores_vdep])
+
+    # Save predictions
+    A = []
+    for game_id in tqdm.tqdm(test_games.game_id, "Loading game ids"):
+        Ai = pd.read_hdf(spadl_h5, f"actions/game_{game_id}")
+        Ai = Ai[Ai["period_id"] <= 4]
+        A.append(Ai[["game_id"]])
+    A = pd.concat(A).reset_index(drop=True)
+    save_predictions(predictions_h5, A, Y_hat)
+    save_static_variables_for_verification(
+        args, briers, lls, roc_aucs, f1scores
+        )
 
 
 

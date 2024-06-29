@@ -32,4 +32,7 @@ socceraction/vdep/@eaDir/*
 socceraction/actiontypes.xlsx
 socceraction/xthreat.py
 
-20230708wc2022.txt
+.venv/*
+generalized-vdep/*
+.python-version
+poetry.lock
