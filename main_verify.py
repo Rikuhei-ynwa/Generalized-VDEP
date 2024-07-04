@@ -201,7 +201,7 @@ def main():
                 tm.save_prediction_for_verification(
                     args, games,
                     spadl_h5, features_h5, labels_h5, predictions_h5,
-                    use_location = False, use_polar = False
+                    use_location = True, use_polar = True
                     )
 
                 print(f"Evaluation time of {model_str} : ", time.time() - start)

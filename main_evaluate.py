@@ -233,7 +233,7 @@ def main():
         tm.save_predictions_for_evaluation(
             args, games, datafolder,
             spadl_h5, features_h5, labels_h5, predictions_h5,
-            use_location = False, use_polar = False
+            use_location = True, use_polar = True
             )
 
     # 4. compute gvdep values and top players
