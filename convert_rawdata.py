@@ -117,7 +117,7 @@ def store_converted_data(
             spadlstore[f"actions/game_{game_id}"] = actions[game_id]
     
 
-def _plot_sample_animation(samples, datafolder):
+def _plot_sample_animation(samples):
     import numpy as np
     from matplotlib.animation import FuncAnimation
     from mplsoccer import Pitch
