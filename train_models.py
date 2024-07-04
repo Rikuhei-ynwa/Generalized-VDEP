@@ -9,7 +9,6 @@ import xgboost
 from matplotlib import pyplot as plt
 from sklearn.metrics import brier_score_loss, confusion_matrix, f1_score, log_loss, roc_auc_score
 
-import socceraction.spadl.config as spadlconfig
 import socceraction.vdep.features as fs
 
 

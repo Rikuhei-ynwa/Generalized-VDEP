@@ -3,7 +3,7 @@ from typing import Callable, List
 import numpy as np  # type: ignore
 import pandas as pd  # type: ignore
 
-import socceraction.spadl.config as spadlconfig
+import socceraction.spadl.config as spadlcfg
 
 NUM_PLAYERS = 22
 DIMENTION = 2
@@ -31,8 +31,8 @@ SPADLCOLUMNS = [
     "freeze_frame_360",  # add
 ]
 
-GOAL_X: float = spadlconfig.FIELD_LENGTH
-GOAL_Y: float = spadlconfig.FIELD_WIDTH / 2
+GOAL_X: float = spadlcfg.FIELD_LENGTH
+GOAL_Y: float = spadlcfg.FIELD_WIDTH / 2
 
 # Penalty area in statsbomb coordinates
 PENALTY_LEFT_STATSBOMB = 102.0
@@ -42,22 +42,22 @@ PENALTY_BOTTOM_STATSBOMB = 62.0
 # Penalty area in spadl coordinates
 PENALTY_LEFT = (
     PENALTY_LEFT_STATSBOMB 
-    / spadlconfig.FIELD_LENGTH_STATSBOMB 
-    * spadlconfig.FIELD_LENGTH
+    / spadlcfg.FIELD_LENGTH_STATSBOMB 
+    * spadlcfg.FIELD_LENGTH
 ) # 102 / 120 * 105 = 89.25
 
 PENALTY_TOP = (
-    spadlconfig.FIELD_WIDTH
+    spadlcfg.FIELD_WIDTH
     - (PENALTY_TOP_STATSBOMB
-    / spadlconfig.FIELD_WIDTH_STATSBOMB
-    * spadlconfig.FIELD_WIDTH)
+    / spadlcfg.FIELD_WIDTH_STATSBOMB
+    * spadlcfg.FIELD_WIDTH)
 ) # 68 - 18 / 120 * 105 = 68 - 15.75 = 52.25
 
 PENALTY_BOTTOM = (
-    spadlconfig.FIELD_WIDTH
+    spadlcfg.FIELD_WIDTH
     - (PENALTY_BOTTOM_STATSBOMB
-    / spadlconfig.FIELD_WIDTH_STATSBOMB
-    * spadlconfig.FIELD_WIDTH)
+    / spadlcfg.FIELD_WIDTH_STATSBOMB
+    * spadlcfg.FIELD_WIDTH)
 ) # 68 - 62 / 120 * 105 = 68 - 54.75 = 15.25
 
 
@@ -126,7 +126,7 @@ def actiontype(actions):
 @simple
 def actiontype_onehot(actions):
     X = pd.DataFrame()
-    for type_name in spadlconfig.actiontypes:
+    for type_name in spadlcfg.actiontypes:
         col = "type_" + type_name
         X[col] = actions["type_name"] == type_name
     return X
@@ -140,7 +140,7 @@ def result(actions):
 @simple
 def result_onehot(actions):
     X = pd.DataFrame()
-    for result_name in spadlconfig.results:
+    for result_name in spadlcfg.results:
         col = "result_" + result_name
         X[col] = actions["result_name"] == result_name
     return X
@@ -167,7 +167,7 @@ def bodypart(actions):
 @simple
 def bodypart_onehot(actions):
     X = pd.DataFrame()
-    for bodypart_name in spadlconfig.bodyparts:
+    for bodypart_name in spadlcfg.bodyparts:
         col = "bodypart_" + bodypart_name
         X[col] = actions["bodypart_name"] == bodypart_name
     return X
@@ -280,11 +280,11 @@ def goalscore(gamestates):
     teamA = actions["team_id"].values[0]
     goals = (
         actions["type_name"].str.contains("shot")
-        & (actions["result_id"] == spadlconfig.results.index("success"))
+        & (actions["result_id"] == spadlcfg.results.index("success"))
         )
     owngoals = (
         actions["type_name"].str.contains("shot")
-        & (actions["result_id"] == spadlconfig.results.index("owngoal"))
+        & (actions["result_id"] == spadlcfg.results.index("owngoal"))
         )
     teamisA = actions["team_id"] == teamA
     teamisB = ~teamisA
@@ -385,12 +385,12 @@ def player_loc_dist(actions):
         # atk_x
         data[:, idx_atk * NUM_FEATURES_PLAYER] = np.nan_to_num(
             locations[:, idx_atk * DIMENTION],
-            nan = -spadlconfig.FIELD_LENGTH,
+            nan = -spadlcfg.FIELD_LENGTH,
             )
         # atk_y
         data[:, idx_atk * NUM_FEATURES_PLAYER + 1] = np.nan_to_num(
             locations[:, idx_atk * DIMENTION + 1],
-            nan = -spadlconfig.FIELD_WIDTH,
+            nan = -spadlcfg.FIELD_WIDTH,
             )
         # atk_dist
         data[:, idx_atk * NUM_FEATURES_PLAYER + 2] = np.nan_to_num(
@@ -407,12 +407,12 @@ def player_loc_dist(actions):
         # dfd_x
         data[:, idx_dfd * NUM_FEATURES_PLAYER] = np.nan_to_num(
             locations[:, idx_dfd * DIMENTION],
-            nan = -spadlconfig.FIELD_LENGTH,
+            nan = -spadlcfg.FIELD_LENGTH,
         )
         # dfd_y
         data[:, idx_dfd * NUM_FEATURES_PLAYER + 1] = np.nan_to_num(
             locations[:, idx_dfd * DIMENTION + 1],
-            nan = -spadlconfig.FIELD_WIDTH,
+            nan = -spadlcfg.FIELD_WIDTH,
         )
         # dfd_dist
         data[:, idx_dfd * NUM_FEATURES_PLAYER + 2] = np.nan_to_num(
@@ -443,7 +443,7 @@ def gain(actions):
     change_period_id = (
         actions["period_id"] - actions["period_id"].shift(1)
         ).fillna(0) != 0
-    on_penalty_id = actions["period_id"] == spadlconfig.ON_PENALTY_PERIOD_ID
+    on_penalty_id = actions["period_id"] == spadlcfg.ON_PENALTY_PERIOD_ID
 
     gains = (
         (offside | regains) & (~change_period_id & ~on_penalty_id)
@@ -464,17 +464,17 @@ def penetration(actions):
 
     penetrate = (
         (x_e >= PENALTY_LEFT)
-        & (x_e <= spadlconfig.FIELD_LENGTH)
+        & (x_e <= spadlcfg.FIELD_LENGTH)
         & (y_e >= PENALTY_BOTTOM)
         & (y_e <= PENALTY_TOP)
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
     penetrate.loc[end_nan] = (
         (x.loc[end_nan] >= PENALTY_LEFT)
-        & (x.loc[end_nan] <= spadlconfig.FIELD_LENGTH)
+        & (x.loc[end_nan] <= spadlcfg.FIELD_LENGTH)
         & (y.loc[end_nan] >= PENALTY_BOTTOM)
         & (y.loc[end_nan] <= PENALTY_TOP)
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
     df["penetration"] = penetrate
     return df

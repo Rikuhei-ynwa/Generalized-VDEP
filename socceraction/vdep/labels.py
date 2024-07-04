@@ -1,6 +1,6 @@
 import pandas as pd  # type: ignore
 
-import socceraction.spadl.config as spadlconfig
+import socceraction.spadl.config as spadlcfg
 import socceraction.vdep.features as fs
 
 
@@ -17,7 +17,7 @@ def gains(actions: pd.DataFrame, nr_actions: int = 5) -> pd.DataFrame:
     change_period_id = (actions["period_id"] - actions["period_id"].shift(1)).fillna(
         0
     ) != 0
-    on_penalty_id = actions["period_id"] == spadlconfig.ON_PENALTY_PERIOD_ID
+    on_penalty_id = actions["period_id"] == spadlcfg.ON_PENALTY_PERIOD_ID
 
     gains = (offside | regains) & (~change_period_id & ~on_penalty_id)
 
@@ -52,7 +52,7 @@ def effective_attack(actions: pd.DataFrame, nr_actions=5) -> pd.DataFrame:
     y_e = actions["end_y"]
 
     penalty_left = fs.PENALTY_LEFT
-    penalty_right = spadlconfig.FIELD_LENGTH
+    penalty_right = spadlcfg.FIELD_LENGTH
     penalty_top = fs.PENALTY_TOP
     penalty_bottom = fs.PENALTY_BOTTOM
 
@@ -61,14 +61,14 @@ def effective_attack(actions: pd.DataFrame, nr_actions=5) -> pd.DataFrame:
         & (x_e <= penalty_right)
         & (y_e <= penalty_top)
         & (y_e >= penalty_bottom)
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
     penetrate.loc[end_nan] = (
         (x.loc[end_nan] >= penalty_left)
         & (x.loc[end_nan] <= penalty_right)
         & (y.loc[end_nan] <= penalty_top)
         & (y.loc[end_nan] >= penalty_bottom)
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
 
     # merging shots, owngoals and team_ids
@@ -105,8 +105,8 @@ def scores(
 
     goals = (
         actions["type_name"].str.contains("shot")
-        & (actions["result_id"] == spadlconfig.results.index("success"))
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["result_id"] == spadlcfg.results.index("success"))
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
     owngoals = actions["result_name"] == "owngoal"
     y = pd.concat([goals, owngoals, actions["team_id"]], axis=1)
@@ -144,8 +144,8 @@ def concedes(
     # merging goals,owngoals and team_ids
     goals = (
         actions["type_name"].str.contains("shot")
-        & (actions["result_id"] == spadlconfig.results.index("success"))
-        & (actions["period_id"] < spadlconfig.ON_PENALTY_PERIOD_ID)
+        & (actions["result_id"] == spadlcfg.results.index("success"))
+        & (actions["period_id"] < spadlcfg.ON_PENALTY_PERIOD_ID)
     )
     owngoals = actions["result_name"] == "owngoal"
     y = pd.concat([goals, owngoals, actions["team_id"]], axis=1)
@@ -176,7 +176,7 @@ def concedes(
 def goal_from_shot(actions: pd.DataFrame) -> pd.DataFrame:
     goals = (
         actions["type_name"].str.contains("shot")
-        & (actions["result_id"] == spadlconfig.results.index("success"))
+        & (actions["result_id"] == spadlcfg.results.index("success"))
         & (actions["period_id"] < 5)
     )
 
