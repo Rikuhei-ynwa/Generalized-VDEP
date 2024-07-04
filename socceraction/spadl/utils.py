@@ -23,7 +23,7 @@ def add_names_360(actions: DataFrame[SPADLSchema_360]) -> DataFrame[SPADLSchema_
     """
     return (
         actions.drop(
-            columns=["type_name", "result_name", "bodypart_name", "timestamp"],
+            columns=["type_name", "result_name", "bodypart_name"],
             errors="ignore",
         )  # add timestamp
         .merge(spadlconfig.actiontypes_df(), how="left")
@@ -49,7 +49,7 @@ def add_names(actions: DataFrame[SPADLSchema]) -> DataFrame[SPADLSchema]:
     """
     return (
         actions.drop(
-            columns=["type_name", "result_name", "bodypart_name", "timestamp"],
+            columns=["type_name", "result_name", "bodypart_name"],
             errors="ignore",
         )  # add timestamp
         .merge(spadlconfig.actiontypes_df(), how="left")

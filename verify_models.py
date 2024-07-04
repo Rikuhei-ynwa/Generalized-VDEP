@@ -1,4 +1,5 @@
 import argparse
+import itertools
 import os
 import pdb
 import pickle
@@ -6,13 +7,15 @@ import random
 import time
 import warnings
 
-import matplotlib as mpl
-import matplotlib.pyplot as plt
+from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
+import shap
 import tqdm
+from adjustText import adjust_text
 
-import socceraction.vdep.features as fs
+import socceraction.spadl as spadl
+import socceraction.vdep.formula as vdepformula
 
 pd.set_option("display.max_columns", None)
 warnings.simplefilter(action="ignore", category=pd.errors.PerformanceWarning)
@@ -21,13 +24,32 @@ warnings.filterwarnings(action="ignore", message="credentials were not supplied.
 os.environ["HDF5_USE_FILE_LOCKING"] = "FALSE"
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--data", type=str, default="statsbomb")
 parser.add_argument("--game", type=str, default="all")
+parser.add_argument("--feature", type=str, default="all")
+parser.add_argument(
+    "--date_opendata", type=int, default=20231002, required=True, 
+    help="Since statsbomb data is constantly being updated, it is important to indicate in advance when the data was downloaded."
+    )
+parser.add_argument(
+    "--date_experiment", type=int, default=0, required=True,
+    help="The date of the experiment is important because the data is constantly being updated."
+    )
+parser.add_argument("--no_games", type=int, default=0)
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--n_nearest", type=int, default=11)
 parser.add_argument("--numProcess", type=int, default=16)
-parser.add_argument("--grid_search", action="store_true")
+parser.add_argument("--skip_convert_rawdata", action="store_true")
+parser.add_argument("--skip_preprocess", action="store_true")
 parser.add_argument("--predict_actions", action="store_true")
-parser.add_argument("--calculate_f1scores", action="store_true")
-parser.add_argument("--show_f1scores", action="store_true")
+parser.add_argument(
+    "--model", type=str, default="xgboost", required=True,
+    help="Please select the model to be used for training. Now the options is only 'xgboost'.",
+    )
+parser.add_argument("--grid_search", action="store_true")
+parser.add_argument("--skip_train", action="store_true")
+parser.add_argument("--test", action="store_true")
+parser.add_argument("--teamView", type=str, default="", help="Please set the name of the country, not the name of the team",)
 parser.add_argument("--pickle", type=int, default=4)
 args, _ = parser.parse_known_args()
 
@@ -36,6 +58,12 @@ numProcess = args.numProcess
 os.environ["OMP_NUM_THREADS"] = str(numProcess)
 
 start = time.time()
+
+random.seed(args.seed)
+np.random.seed(args.seed)
+
+datafolder = f"../GVDEP_data/data-{args.data}/{args.game}/{args.date_experiment}"
+os.makedirs(datafolder, exist_ok=True)
 
 # Preparation
 if "euro" in args.game or "wc" in args.game:
