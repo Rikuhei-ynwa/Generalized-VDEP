@@ -101,7 +101,7 @@ def extract_df_to_analyze(A_target, knockout_teams_list, concedes_ser):
     return result_df
 
 
-def analyze_team_defense(args, A, games):
+def evaluate_team_defense(args, A, games):
     figuredir_analysis = args.figuredir + "/analysis"
     os.makedirs(figuredir_analysis, exist_ok=True)
 
@@ -159,8 +159,8 @@ def analyze_team_defense(args, A, games):
             grid_alpha=0.5,
         )
         # ax_team.grid()
-        # ax_team.axvline(result_df[x].mean(), 0, 1, c="silver")
-        # ax_team.axhline(result_df[y].mean(), 0, 1, c="silver")
+        ax_team.axvline(result_df[x].mean(), 0, 1, c="silver")
+        ax_team.axhline(result_df[y].mean(), 0, 1, c="silver")
         plt.tight_layout()
         fig_team.savefig(os.path.join(figuredir_analysis, f"teams_{x}_{y}.png"))
         print(os.path.join(figuredir_analysis, f"teams_{x}_{y}.png") + " is saved")

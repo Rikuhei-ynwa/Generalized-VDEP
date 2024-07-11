@@ -248,7 +248,7 @@ def main():
 
 
     # 5. Analyze team defense
-    analysis.analyze_team_defense(args, A, games)
+    analysis.evaluate_team_defense(args, A, games)
     analysis.plot_nan_hist(args, A)
     
 

@@ -95,11 +95,11 @@ def boxplot_per_metric(arrays, probs_cols, figuredir, metric):
     df = df.groupby("n_nearest")
 
     # Show figures by Prediction of the Probabilities
-    alphabet = ["(a)", "(b)", "(c)", "(d)"]
+    # alphabet = ["(a)", "(b)", "(c)", "(d)"]
     fig, axes = plt.subplots(
         2,
         2,
-        figsize=(16, 9),
+        figsize=(16, 12),
         sharex="col",
         sharey=True,
     )
@@ -116,12 +116,12 @@ def boxplot_per_metric(arrays, probs_cols, figuredir, metric):
             flierprops=dict(marker="x", markeredgecolor="black"),
         )
         ax.set_title(
-            alphabet[i] + " " + cols[i], fontsize=24, loc="left"
+            cols[i], fontsize=32, loc="left"
             )
 
         # set details
         ax.set_ylim(0.0, 1.0)
-        ax.tick_params(axis="both", labelsize=20)
+        ax.tick_params(axis="both", labelsize=24)
 
     fig.supxlabel(
         "The number of nearest attacker/defender to the ball (n_nearest)", 
@@ -207,7 +207,7 @@ def main():
                 print(f"Evaluation time of {model_str} : ", time.time() - start)
 
     # Show the graphs about F1scores of each probabilities
-    probs_cols = ["scores", "concedes", "gains", "effective_attack"]
+    probs_cols = ["scores", "concedes", "gains", "effective_attacks"]
 
     n_nearest_array = np.repeat(np.arange(args.n_nearest+1), args.k_fold)
     briers, lls, roc_aucs, f1scores = (
