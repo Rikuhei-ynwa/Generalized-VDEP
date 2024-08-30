@@ -1,3 +1,5 @@
+[![arXiv](https://img.shields.io/badge/arXiv-2212.00021-B31B1B.svg)](https://arxiv.org/pdf/2212.00021)
+
 # [Generalized-VDEP](https://arxiv.org/pdf/2212.00021)
 This is an official implementation of "[Generalized-VDEP](https://arxiv.org/pdf/2212.00021)". (Submitted to IJCSS)
 
