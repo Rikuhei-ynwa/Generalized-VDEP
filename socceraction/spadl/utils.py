@@ -1,4 +1,8 @@
 """Utility functions for working with SPADL dataframes."""
+
+# Rikuhei Umemoto, 2024
+# modifying the code https://github.com/ML-KULeuven/socceraction/blob/master/socceraction/spadl/utils.py
+
 from pandera.typing import DataFrame
 
 from . import config as spadlconfig

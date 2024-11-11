@@ -367,15 +367,25 @@ def player_loc_dist(actions):
     for pl in range(NUM_PLAYERS_TEAM):
         # atk: attacker, dfd: defender
         cols.extend(
+            # [
+            #     f"atk{pl}_x",
+            #     f"atk{pl}_y",
+            #     f"dist_atk{pl}",
+            #     f"angle_atk{pl}",
+            #     f"dfd{pl}_x",
+            #     f"dfd{pl}_y",
+            #     f"dist_dfd{pl}",
+            #     f"angle_dfd{pl}",
+            # ]
             [
-                f"atk{pl}_x",
-                f"atk{pl}_y",
-                f"dist_atk{pl}",
-                f"angle_atk{pl}",
-                f"dfd{pl}_x",
-                f"dfd{pl}_y",
-                f"dist_dfd{pl}",
-                f"angle_dfd{pl}",
+                f"attack{pl+1}_x",
+                f"attack{pl+1}_y",
+                f"attack{pl+1}_dist",
+                f"attack{pl+1}_angle",
+                f"defense{pl+1}_x",
+                f"defense{pl+1}_y",
+                f"defense{pl+1}_dist",
+                f"defense{pl+1}_angle",
             ]
         )
         idx_atk = pl

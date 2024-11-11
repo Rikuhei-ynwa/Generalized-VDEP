@@ -138,8 +138,8 @@ def evaluate_team_defense(args, A, games):
         if x == "concedes":
             ax_team.set_xlabel("Total number of goals conceded per team", size=32)
         else:
-            ax_team.set_xlabel("Average " + result_df[x].name + " per team", size=32)
-        ax_team.set_ylabel("Average " + result_df[y].name + " per team", size=32)
+            ax_team.set_xlabel(result_df[x].name + " per team", size=32)
+        ax_team.set_ylabel(result_df[y].name + " per team", size=32)
         text_team = [
             ax_team.text(
                 result_df.at[index, x],

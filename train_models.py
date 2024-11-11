@@ -167,7 +167,6 @@ def create_model(args):
                 verbosity=0,
                 random_state=args.seed,
                 objective="binary:logistic",
-                eval_metric="logloss",
                 use_label_encoder=False,
             )
         elif args.grid_search:
@@ -228,21 +227,26 @@ def train(args, trainX, trainY, do="evaluation"):
             )
         model = create_model(args)
         model.fit(trainX, trainY[col])
-        illustrate_shap(model, trainX)
-        plt.savefig(
-            os.path.join(
-                figuredir_features, 
-                f"{args.model_str}_{col}_summary.png"
-                )
-            )
-        plt.clf()
-        plt.close()
+        # illustrate_shap(model, trainX)
+        # plt.savefig(
+        #     os.path.join(
+        #         figuredir_features, 
+        #         f"{args.model_str}_{col}_summary.png"
+        #         )
+        #     )
+        # plt.clf()
+        # plt.close()
         models[col] = model
 
     return models
 
 
-def inference_for_evaluation(models, testX, testY):
+def inference_for_evaluation(args, models, trainX, testX, testY):
+    figuredir_features = (
+        args.figuredir
+        + f"evaluation_feature_importances"
+        )
+    os.makedirs(figuredir_features, exist_ok=True)
     Y_hat = pd.DataFrame()
     f1scores = np.empty(len(testY.columns))
     for i, col in enumerate(testY.columns):
@@ -257,11 +261,37 @@ def inference_for_evaluation(models, testX, testY):
         _, _, _, f1scores[i] = evaluate_metrics(
             testY[col], Y_hat[col]
             )
+        # SHAP値の計算と可視化
+        explainer = shap.TreeExplainer(models[col])
+        print(f"### SHAP summary plot for {col} ###")
+        plt.figure(figsize=(12, 9))
+        shap.summary_plot(
+            shap_values=explainer.shap_values(testX),
+            features=testX,
+            feature_names=testX.columns,
+            show=False,
+            # plot_type='bar',
+            max_display=10,
+            )
+        plt.savefig(
+            os.path.join(
+                figuredir_features, 
+                f"{args.model_str}_{col}_summary.png"
+                )
+            )
+        plt.clf()
+        plt.close()
 
     return Y_hat, f1scores
 
 
-def inference_for_verification(models, testX, testY):
+def inference_for_verification(args, models, trainX, testX, testY):
+    figuredir_features = (
+        args.figuredir
+        + f"verification_feature_importances"
+        )
+    os.makedirs(figuredir_features, exist_ok=True)
+
     Y_hat = pd.DataFrame()
     briers = np.empty(len(testY.columns))
     lls = np.empty(len(testY.columns))
@@ -279,6 +309,26 @@ def inference_for_verification(models, testX, testY):
         briers[i], lls[i], roc_aucs[i], f1scores[i] = evaluate_metrics(
             testY[col], Y_hat[col]
             )
+        # SHAP値の計算と可視化
+        explainer = shap.TreeExplainer(models[col])
+        print(f"### SHAP summary plot for {col} ###")
+        # 図のサイズを指定
+        plt.figure(figsize=(12, 9))
+        shap.summary_plot(
+            shap_values=explainer.shap_values(testX),
+            features=testX,
+            feature_names=testX.columns,
+            show=False,
+            # plot_type='bar',
+            max_display=10,
+            )
+        plt.savefig(
+            os.path.join(figuredir_features, 
+                f"{args.model_str}_{col}_summary.png"
+                )
+            )
+        plt.clf()
+        plt.close()
 
     return Y_hat, briers, lls, roc_aucs, f1scores
 
@@ -411,10 +461,10 @@ def save_predictions_for_evaluation(
         testgames, features_h5, labels_h5, Xcols_vdep, vaep=False
         )
     Y_hat_vaep, f1scores_vaep = inference_for_evaluation(
-        models_vaep, testX_vaep, testY_vaep
+        args, models_vaep, trainX_vaep, testX_vaep, testY_vaep
         )
     Y_hat_vdep, f1scores_vdep = inference_for_evaluation(
-        models_vdep, testX_vdep, testY_vdep
+        args, models_vdep, trainX_vdep, testX_vdep, testY_vdep
         )
 
     testY = pd.concat([testY_vaep, testY_vdep], axis=1)
@@ -486,10 +536,14 @@ def save_prediction_for_verification(
         test_games, features_h5, labels_h5, Xcols_vdep, vaep=False
         )
     Y_hat_vaep, briers_vaep, lls_vaep, roc_aucs_vaep, f1scores_vaep = (
-        inference_for_verification(models_vaep, testX_vaep, testY_vaep)
+        inference_for_verification(
+            args, models_vaep, trainX_vaep, testX_vaep, testY_vaep
+            )
         )
     Y_hat_vdep, briers_vdep, lls_vdep, roc_aucs_vdep, f1scores_vdep = (
-        inference_for_verification(models_vdep, testX_vdep, testY_vdep)
+        inference_for_verification(
+            args, models_vdep, trainX_vdep, testX_vdep, testY_vdep
+            )
         )
 
     testY = pd.concat([testY_vaep, testY_vdep], axis=1)

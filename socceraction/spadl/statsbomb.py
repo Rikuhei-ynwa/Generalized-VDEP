@@ -1,4 +1,8 @@
 """StatsBomb event stream data to SPADL converter."""
+
+# Rikuhei Umemoto, 2024
+# modifying the code https://github.com/ML-KULeuven/socceraction/blob/master/socceraction/spadl/statsbomb.py
+
 import warnings
 from typing import Tuple, Dict, Any, Optional, cast
 
