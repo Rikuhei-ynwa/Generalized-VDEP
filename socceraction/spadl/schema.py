@@ -1,4 +1,8 @@
 """Schema for SPADL actions."""
+
+# Rikuhei Umemoto, 2024
+# modifying the code https://github.com/ML-KULeuven/socceraction/blob/master/socceraction/spadl/schema.py
+
 from typing import Any, Optional
 
 import pandera as pa

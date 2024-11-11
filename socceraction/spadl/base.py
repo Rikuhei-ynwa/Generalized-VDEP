@@ -5,6 +5,10 @@ A converter should implement 'convert_to_actions' to convert the events to the
 SPADL format.
 
 """
+
+# Rikuhei Umemoto, 2024
+# modifying the code https://github.com/ML-KULeuven/socceraction/blob/master/socceraction/spadl/base.py
+
 import pandas as pd  # type: ignore
 
 from . import config as spadlconfig

@@ -15,6 +15,10 @@ actiontypes : list(str)
     The action types used in the SPADL language.
 
 """
+
+# Rikuhei Umemoto, 2024
+# modifying the code https://github.com/ML-KULeuven/socceraction/blob/master/socceraction/spadl/config.py
+
 from typing import List
 
 import pandas as pd  # type: ignore
